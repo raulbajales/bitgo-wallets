@@ -16,7 +16,10 @@ type TransferRequest struct {
 	TransferType       WalletType     `json:"transfer_type" db:"transfer_type"`
 	Status             TransferStatus `json:"status" db:"status"`
 	BitgoTransferID    *string        `json:"bitgo_transfer_id" db:"bitgo_transfer_id"`
+	BitgoTxid          *string        `json:"bitgo_txid" db:"bitgo_txid"`
 	TransactionHash    *string        `json:"transaction_hash" db:"transaction_hash"`
+	Fee                *string        `json:"fee" db:"fee"`
+	FeeRate            *string        `json:"fee_rate" db:"fee_rate"`
 	RequiredApprovals  int            `json:"required_approvals" db:"required_approvals"`
 	ReceivedApprovals  int            `json:"received_approvals" db:"received_approvals"`
 	Memo               *string        `json:"memo" db:"memo"`

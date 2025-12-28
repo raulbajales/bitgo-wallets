@@ -15,6 +15,7 @@ type TransferRequestRepository interface {
 	GetByID(id uuid.UUID) (*models.TransferRequest, error)
 	List(walletID uuid.UUID, limit, offset int) ([]*models.TransferRequest, error)
 	ListByStatus(status models.TransferStatus, limit, offset int) ([]*models.TransferRequest, error)
+	GetTransfersByStatuses(statuses []models.TransferStatus, limit int) ([]*models.TransferRequest, error)
 	Update(request *models.TransferRequest) error
 	UpdateStatus(id uuid.UUID, status models.TransferStatus) error
 }
@@ -221,4 +222,68 @@ func (r *transferRequestRepository) UpdateStatus(id uuid.UUID, status models.Tra
 	}
 
 	return nil
+}
+
+// GetTransfersByStatuses gets transfers that match any of the given statuses
+func (r *transferRequestRepository) GetTransfersByStatuses(statuses []models.TransferStatus, limit int) ([]*models.TransferRequest, error) {
+	if len(statuses) == 0 {
+		return []*models.TransferRequest{}, nil
+	}
+
+	// Build IN clause for statuses
+	statusPlaceholders := ""
+	args := make([]interface{}, 0, len(statuses)+1)
+
+	for i, status := range statuses {
+		if i > 0 {
+			statusPlaceholders += ", "
+		}
+		statusPlaceholders += fmt.Sprintf("$%d", i+1)
+		args = append(args, status)
+	}
+
+	args = append(args, limit)
+
+	query := fmt.Sprintf(`
+		SELECT id, wallet_id, requested_by_user_id, recipient_address, amount_string,
+			   coin, transfer_type, status, bitgo_transfer_id, bitgo_txid, transaction_hash,
+			   fee, fee_rate, required_approvals, received_approvals, memo,
+			   fee_string, estimated_fee_string, submitted_at, approved_at,
+			   completed_at, failed_at, created_at, updated_at
+		FROM transfer_requests
+		WHERE status IN (%s)
+		ORDER BY updated_at ASC
+		LIMIT $%d
+	`, statusPlaceholders, len(args))
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query transfer requests by statuses: %w", err)
+	}
+	defer rows.Close()
+
+	var requests []*models.TransferRequest
+	for rows.Next() {
+		request := &models.TransferRequest{}
+		err := rows.Scan(
+			&request.ID, &request.WalletID, &request.RequestedByUserID,
+			&request.RecipientAddress, &request.AmountString, &request.Coin,
+			&request.TransferType, &request.Status, &request.BitgoTransferID,
+			&request.BitgoTxid, &request.TransactionHash, &request.Fee, &request.FeeRate,
+			&request.RequiredApprovals, &request.ReceivedApprovals, &request.Memo,
+			&request.FeeString, &request.EstimatedFeeString, &request.SubmittedAt,
+			&request.ApprovedAt, &request.CompletedAt, &request.FailedAt,
+			&request.CreatedAt, &request.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan transfer request: %w", err)
+		}
+		requests = append(requests, request)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating transfer requests: %w", err)
+	}
+
+	return requests, nil
 }

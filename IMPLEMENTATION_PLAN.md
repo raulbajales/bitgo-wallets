@@ -90,7 +90,6 @@ The platform supports **request + tracking workflows**, while respecting custody
 - Transfer build / submit adapters
 - Status normalization
 - Idempotency handling
-- Integration tests against BitGo test environment
 
 ---
 
@@ -108,11 +107,12 @@ The platform supports **request + tracking workflows**, while respecting custody
   - Get transfer status
   - List transfers
 - Map BitGo pending approvals → UI states
-- Webhook receiver or polling worker
+- Polling worker
 - Notifications for pending approvals
 
 ### Tasks (Frontend)
 
+- login form using expecting dummy email and pass
 - Wallet dashboard
 - Create transfer form
 - Transfer detail page with status timeline
