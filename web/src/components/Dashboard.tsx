@@ -411,7 +411,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Wallets</h3>
-            <button 
+            <button
               onClick={() => setActiveTab("create-wallet")}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
             >
