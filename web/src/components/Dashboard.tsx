@@ -45,7 +45,12 @@ interface CreateWalletForm {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<
-    "overview" | "wallets" | "transfers" | "new-transfer" | "create-wallet"
+    | "overview"
+    | "wallets"
+    | "transfers"
+    | "new-transfer"
+    | "create-wallet"
+    | "help"
   >("overview");
   const [selectedWalletType, setSelectedWalletType] = useState<"warm" | "cold">(
     "warm"
@@ -59,6 +64,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     coin: "BTC",
     passphrase: "",
   });
+  const [walletFormErrors, setWalletFormErrors] = useState<{
+    name?: string;
+    passphrase?: string;
+    general?: string;
+  }>({});
   const [error, setError] = useState<string | null>(null);
 
   // Load data from API
@@ -82,6 +92,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // Wallet form validation
+  const validateWalletForm = (): boolean => {
+    const newErrors: typeof walletFormErrors = {};
+
+    // Validate wallet name
+    if (!createWalletForm.name.trim()) {
+      newErrors.name = "Wallet name is required";
+    } else if (createWalletForm.name.length < 3) {
+      newErrors.name = "Wallet name must be at least 3 characters";
+    } else if (createWalletForm.name.length > 50) {
+      newErrors.name = "Wallet name must be less than 50 characters";
+    } else if (!/^[a-zA-Z0-9\s\-_]+$/.test(createWalletForm.name)) {
+      newErrors.name =
+        "Wallet name can only contain letters, numbers, spaces, hyphens, and underscores";
+    }
+
+    // Validate passphrase
+    if (!createWalletForm.passphrase.trim()) {
+      newErrors.passphrase = "Passphrase is required";
+    } else if (createWalletForm.passphrase.length < 12) {
+      newErrors.passphrase =
+        "Passphrase must be at least 12 characters for security";
+    } else if (createWalletForm.passphrase.length > 256) {
+      newErrors.passphrase = "Passphrase is too long (maximum 256 characters)";
+    } else if (
+      !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(createWalletForm.passphrase)
+    ) {
+      newErrors.passphrase =
+        "Passphrase must contain at least one lowercase letter, one uppercase letter, and one number";
+    }
+
+    setWalletFormErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const loadTransfers = async () => {
     try {
       const response = await api.get("/api/v1/transfers");
@@ -95,12 +140,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const createWallet = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Clear previous errors
+    setWalletFormErrors({});
+    setError(null);
+
+    // Validate form
+    if (!validateWalletForm()) {
+      return;
+    }
+
     try {
       setLoading(true);
-      setError(null);
 
       const response = await api.post("/api/v1/wallets", {
-        name: createWalletForm.name,
+        name: createWalletForm.name.trim(),
         type: createWalletForm.type,
         coin: createWalletForm.coin,
         passphrase: createWalletForm.passphrase,
@@ -116,11 +170,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         coin: "BTC",
         passphrase: "",
       });
+      setWalletFormErrors({});
       setActiveTab("wallets");
     } catch (err: any) {
-      setError(
-        err.response?.data?.message || err.message || "Failed to create wallet"
-      );
+      const errorMessage =
+        err.response?.data?.message || err.message || "Failed to create wallet";
+      setWalletFormErrors({ general: errorMessage });
     } finally {
       setLoading(false);
     }
@@ -611,9 +666,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           Create New Wallet
         </h3>
 
-        {error && (
+        {(error || walletFormErrors.general) && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-700">{error}</p>
+            <p className="text-sm text-red-700">
+              {error || walletFormErrors.general}
+            </p>
           </div>
         )}
 
@@ -630,16 +687,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               type="text"
               id="walletName"
               value={createWalletForm.name}
-              onChange={(e) =>
+              onChange={(e) => {
                 setCreateWalletForm((prev) => ({
                   ...prev,
                   name: e.target.value,
-                }))
-              }
-              required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                }));
+                // Clear error when user starts typing
+                if (walletFormErrors.name) {
+                  setWalletFormErrors((prev) => ({ ...prev, name: undefined }));
+                }
+              }}
+              className={`w-full border rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                walletFormErrors.name ? "border-red-300" : "border-gray-300"
+              }`}
               placeholder="e.g., Main Trading Wallet"
             />
+            {walletFormErrors.name && (
+              <p className="text-red-600 text-sm mt-1">
+                {walletFormErrors.name}
+              </p>
+            )}
           </div>
 
           {/* Wallet Type */}
@@ -731,19 +798,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               type="password"
               id="passphrase"
               value={createWalletForm.passphrase}
-              onChange={(e) =>
+              onChange={(e) => {
                 setCreateWalletForm((prev) => ({
                   ...prev,
                   passphrase: e.target.value,
-                }))
-              }
-              required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Enter a strong passphrase"
+                }));
+                // Clear error when user starts typing
+                if (walletFormErrors.passphrase) {
+                  setWalletFormErrors((prev) => ({
+                    ...prev,
+                    passphrase: undefined,
+                  }));
+                }
+              }}
+              className={`w-full border rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                walletFormErrors.passphrase
+                  ? "border-red-300"
+                  : "border-gray-300"
+              }`}
+              placeholder="Enter a strong passphrase (min 12 characters)"
             />
+            {walletFormErrors.passphrase && (
+              <p className="text-red-600 text-sm mt-1">
+                {walletFormErrors.passphrase}
+              </p>
+            )}
             <p className="text-sm text-gray-500 mt-1">
-              This passphrase will be used to secure your wallet. Make sure to
-              store it safely.
+              Passphrase must contain at least one uppercase letter, one
+              lowercase letter, and one number. Keep it secure!
             </p>
           </div>
 
@@ -1028,6 +1110,430 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     </div>
   );
 
+  const renderHelp = () => (
+    <div className="space-y-8">
+      {/* Help Header */}
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-gray-900 mb-4">
+          Wallet Types & Use Cases
+        </h2>
+        <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+          BitGo offers different wallet types to meet your security and
+          accessibility needs. Choose the right wallet type based on your use
+          case and risk tolerance.
+        </p>
+      </div>
+
+      {/* Wallet Types Comparison */}
+      <div className="grid md:grid-cols-2 gap-8">
+        {/* Warm Wallets */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                <div className="w-4 h-4 bg-orange-500 rounded-full"></div>
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-white">
+                  Warm Wallets
+                </h3>
+                <p className="text-orange-100 text-sm">
+                  For frequent trading and transfers
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-2">
+                What are Warm Wallets?
+              </h4>
+              <p className="text-gray-600 text-sm">
+                Warm wallets are online-connected wallets that provide a balance
+                between security and accessibility. They allow for automated
+                processing while maintaining strong security controls through
+                multi-signature technology.
+              </p>
+            </div>
+
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-2">
+                Key Features:
+              </h4>
+              <ul className="space-y-2 text-sm text-gray-600">
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                  Instant transfers with automated processing
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                  Real-time balance updates and transaction monitoring
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                  Multi-signature security with configurable thresholds
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                  API integration for programmatic access
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-2">
+                Best Use Cases:
+              </h4>
+              <ul className="space-y-2 text-sm text-gray-600">
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Daily trading operations
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Customer withdrawals and deposits
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Exchange liquidity management
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  DeFi protocol interactions
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Automated treasury operations
+                </li>
+              </ul>
+            </div>
+
+            <div className="mt-4 p-3 bg-orange-50 rounded-lg">
+              <p className="text-xs text-orange-800">
+                <strong>Processing Time:</strong> Instant to 15 minutes
+                depending on network conditions
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Cold Wallets */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-white">
+                  Cold Wallets
+                </h3>
+                <p className="text-blue-100 text-sm">
+                  For long-term secure storage
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-2">
+                What are Cold Wallets?
+              </h4>
+              <p className="text-gray-600 text-sm">
+                Cold wallets are offline storage solutions that provide maximum
+                security for your digital assets. They require manual approval
+                processes and offline signing, making them ideal for long-term
+                storage of large amounts.
+              </p>
+            </div>
+
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-2">
+                Key Features:
+              </h4>
+              <ul className="space-y-2 text-sm text-gray-600">
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                  Offline key storage with air-gapped security
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                  Manual approval workflow with multiple approvers
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                  Hardware security module (HSM) protection
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                  Comprehensive audit trails and compliance reporting
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-2">
+                Best Use Cases:
+              </h4>
+              <ul className="space-y-2 text-sm text-gray-600">
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Long-term asset storage (HODL strategy)
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Corporate treasury reserves
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Institutional custody requirements
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Insurance fund protection
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  High-value transfers requiring enhanced security
+                </li>
+              </ul>
+            </div>
+
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+              <p className="text-xs text-blue-800">
+                <strong>Processing Time:</strong> 4-24 hours depending on
+                approval requirements and urgency level
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Security Comparison */}
+      <div className="bg-white rounded-lg shadow-md p-8">
+        <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">
+          Security & Feature Comparison
+        </h3>
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="text-left py-4 px-4 font-semibold text-gray-900">
+                  Feature
+                </th>
+                <th className="text-center py-4 px-4 font-semibold text-orange-600">
+                  Warm Wallets
+                </th>
+                <th className="text-center py-4 px-4 font-semibold text-blue-600">
+                  Cold Wallets
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              <tr>
+                <td className="py-4 px-4 font-medium text-gray-900">
+                  Security Level
+                </td>
+                <td className="py-4 px-4 text-center">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                    High
+                  </span>
+                </td>
+                <td className="py-4 px-4 text-center">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    Maximum
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="py-4 px-4 font-medium text-gray-900">
+                  Processing Speed
+                </td>
+                <td className="py-4 px-4 text-center text-green-600">
+                  ✓ Instant
+                </td>
+                <td className="py-4 px-4 text-center text-yellow-600">
+                  ⏳ 4-24 hours
+                </td>
+              </tr>
+              <tr>
+                <td className="py-4 px-4 font-medium text-gray-900">
+                  Automation
+                </td>
+                <td className="py-4 px-4 text-center text-green-600">✓ Full</td>
+                <td className="py-4 px-4 text-center text-red-600">✗ Manual</td>
+              </tr>
+              <tr>
+                <td className="py-4 px-4 font-medium text-gray-900">
+                  API Access
+                </td>
+                <td className="py-4 px-4 text-center text-green-600">
+                  ✓ Available
+                </td>
+                <td className="py-4 px-4 text-center text-yellow-600">
+                  ⚠ Limited
+                </td>
+              </tr>
+              <tr>
+                <td className="py-4 px-4 font-medium text-gray-900">
+                  Multi-signature
+                </td>
+                <td className="py-4 px-4 text-center text-green-600">
+                  ✓ 2-of-3
+                </td>
+                <td className="py-4 px-4 text-center text-green-600">
+                  ✓ 3-of-5+
+                </td>
+              </tr>
+              <tr>
+                <td className="py-4 px-4 font-medium text-gray-900">
+                  Ideal Amount Range
+                </td>
+                <td className="py-4 px-4 text-center text-sm text-gray-600">
+                  Operating funds
+                </td>
+                <td className="py-4 px-4 text-center text-sm text-gray-600">
+                  Large reserves
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Getting Started */}
+      <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-8">
+        <div className="text-center">
+          <h3 className="text-2xl font-bold text-gray-900 mb-4">
+            Ready to Get Started?
+          </h3>
+          <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
+            Choose the wallet type that best fits your needs. You can always
+            create multiple wallets and transfer funds between them as your
+            requirements change.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={() => setActiveTab("create-wallet")}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-colors"
+            >
+              Create Your First Wallet
+            </button>
+            <button
+              onClick={() => setActiveTab("wallets")}
+              className="border border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 px-8 py-3 rounded-lg font-semibold transition-colors"
+            >
+              View Existing Wallets
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -1087,6 +1593,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 label: "New Transfer",
                 icon: "M12 4v16m8-8H4",
               },
+              {
+                key: "help",
+                label: "Help",
+                icon: "M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+              },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -1124,6 +1635,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         {activeTab === "transfers" && renderTransfers()}
         {activeTab === "new-transfer" && renderNewTransfer()}
         {activeTab === "create-wallet" && renderCreateWallet()}
+        {activeTab === "help" && renderHelp()}
       </main>
     </div>
   );

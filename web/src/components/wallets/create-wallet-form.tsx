@@ -104,17 +104,46 @@ export function CreateWalletForm({
     // Validate label
     if (!formData.label.trim()) {
       newErrors.label = "Wallet label is required";
+    } else if (formData.label.length < 3) {
+      newErrors.label = "Label must be at least 3 characters";
     } else if (formData.label.length > 100) {
       newErrors.label = "Label must be less than 100 characters";
+    } else if (!/^[a-zA-Z0-9\s\-_.()]+$/.test(formData.label)) {
+      newErrors.label =
+        "Label contains invalid characters. Only letters, numbers, spaces, and basic punctuation allowed";
+    }
+
+    // Validate coin selection
+    if (
+      !formData.coin ||
+      !SUPPORTED_COINS.find((c) => c.value === formData.coin)
+    ) {
+      newErrors.coin = "Please select a supported cryptocurrency";
+    }
+
+    // Validate wallet type
+    if (
+      !formData.walletType ||
+      !WALLET_TYPES.find((t) => t.value === formData.walletType)
+    ) {
+      newErrors.walletType = "Please select a valid wallet type";
     }
 
     // Validate threshold for multisig
-    if (
-      formData.multisigType &&
-      (!formData.threshold || formData.threshold < 1 || formData.threshold > 10)
-    ) {
-      newErrors.threshold =
-        "Threshold must be between 1 and 10 for multisig wallets";
+    if (formData.multisigType && formData.multisigType !== "") {
+      if (
+        !formData.threshold ||
+        formData.threshold < 1 ||
+        formData.threshold > 10
+      ) {
+        newErrors.threshold =
+          "Threshold must be between 1 and 10 for multisig wallets";
+      }
+
+      // Ensure threshold is reasonable for multisig type
+      if (formData.multisigType === "tss" && formData.threshold !== 2) {
+        newErrors.threshold = "TSS wallets typically use a 2-of-3 threshold";
+      }
     }
 
     setErrors(newErrors);
@@ -253,13 +282,15 @@ export function CreateWalletForm({
                   htmlFor="coin"
                   className="block text-sm font-medium text-gray-700"
                 >
-                  Cryptocurrency
+                  Cryptocurrency <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="coin"
                   value={formData.coin}
                   onChange={(e) => handleInputChange("coin", e.target.value)}
-                  className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                  className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    errors.coin ? "border-red-300" : "border-gray-300"
+                  }`}
                   disabled={isSubmitting}
                 >
                   {SUPPORTED_COINS.map((coin) => (
@@ -268,6 +299,9 @@ export function CreateWalletForm({
                     </option>
                   ))}
                 </select>
+                {errors.coin && (
+                  <p className="text-red-600 text-sm">{errors.coin}</p>
+                )}
               </div>
 
               {/* Wallet Type */}
@@ -276,7 +310,7 @@ export function CreateWalletForm({
                   htmlFor="walletType"
                   className="block text-sm font-medium text-gray-700"
                 >
-                  Wallet Type
+                  Wallet Type <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="walletType"
@@ -284,7 +318,9 @@ export function CreateWalletForm({
                   onChange={(e) =>
                     handleInputChange("walletType", e.target.value as any)
                   }
-                  className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                  className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    errors.walletType ? "border-red-300" : "border-gray-300"
+                  }`}
                   disabled={isSubmitting}
                 >
                   {WALLET_TYPES.map((type) => (
@@ -293,6 +329,9 @@ export function CreateWalletForm({
                     </option>
                   ))}
                 </select>
+                {errors.walletType && (
+                  <p className="text-red-600 text-sm">{errors.walletType}</p>
+                )}
               </div>
             </div>
 

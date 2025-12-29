@@ -13,6 +13,58 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency, truncateAddress } from "@/lib/utils";
 import { type Wallet } from "@/components/wallets/wallet-card";
 
+// Address format validation helper
+const validateAddressFormat = (
+  address: string,
+  coin: string
+): { isValid: boolean; error?: string } => {
+  const cleanAddress = address.trim();
+
+  switch (coin.toLowerCase()) {
+    case "btc":
+    case "bitcoin":
+      // Bitcoin addresses: legacy (1...), P2SH (3...), Bech32 (bc1...)
+      if (
+        /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(cleanAddress) ||
+        /^bc1[a-z0-9]{39,59}$/.test(cleanAddress)
+      ) {
+        return { isValid: true };
+      }
+      return { isValid: false, error: "Invalid Bitcoin address format" };
+
+    case "eth":
+    case "ethereum":
+    case "usdc":
+    case "usdt":
+      // Ethereum addresses: 0x followed by 40 hex characters
+      if (/^0x[a-fA-F0-9]{40}$/.test(cleanAddress)) {
+        return { isValid: true };
+      }
+      return { isValid: false, error: "Invalid Ethereum address format" };
+
+    case "ltc":
+    case "litecoin":
+      // Litecoin addresses: similar to Bitcoin but with L, M prefix or ltc1 for Bech32
+      if (
+        /^[LM][a-km-zA-HJ-NP-Z1-9]{26,33}$/.test(cleanAddress) ||
+        /^ltc1[a-z0-9]{39,59}$/.test(cleanAddress)
+      ) {
+        return { isValid: true };
+      }
+      return { isValid: false, error: "Invalid Litecoin address format" };
+
+    default:
+      // For other coins, basic length and character validation
+      if (cleanAddress.length < 10 || cleanAddress.length > 100) {
+        return { isValid: false, error: "Address length invalid" };
+      }
+      if (!/^[a-zA-Z0-9]+$/.test(cleanAddress)) {
+        return { isValid: false, error: "Address contains invalid characters" };
+      }
+      return { isValid: true };
+  }
+};
+
 interface CreateTransferFormProps {
   wallet: Wallet;
   onSubmit: (transferData: TransferFormData) => Promise<void>;
@@ -38,6 +90,9 @@ interface FormErrors {
   recipientAddress?: string;
   amountString?: string;
   memo?: string;
+  businessPurpose?: string;
+  requestorName?: string;
+  requestorEmail?: string;
   general?: string;
 }
 
@@ -71,7 +126,20 @@ export function CreateTransferForm({
     if (!formData.recipientAddress.trim()) {
       newErrors.recipientAddress = "Recipient address is required";
     } else if (formData.recipientAddress.length < 10) {
-      newErrors.recipientAddress = "Invalid address format";
+      newErrors.recipientAddress = "Invalid address format - too short";
+    } else if (formData.recipientAddress.length > 100) {
+      newErrors.recipientAddress = "Address is too long";
+    } else {
+      // Basic format validation based on coin type
+      const coinValidation = validateAddressFormat(
+        formData.recipientAddress,
+        wallet.coin
+      );
+      if (!coinValidation.isValid) {
+        newErrors.recipientAddress =
+          coinValidation.error ||
+          "Invalid address format for this cryptocurrency";
+      }
     }
 
     // Validate amount
@@ -83,6 +151,13 @@ export function CreateTransferForm({
 
       if (isNaN(amount) || amount <= 0) {
         newErrors.amountString = "Amount must be a positive number";
+      } else if (
+        amount.toString() !== formData.amountString &&
+        !formData.amountString.match(/^\d+\.?\d*$/)
+      ) {
+        newErrors.amountString = "Amount must be a valid number";
+      } else if (amount < 0.00000001) {
+        newErrors.amountString = "Amount too small (minimum 0.00000001)";
       } else if (amount > spendableBalance) {
         newErrors.amountString = `Amount exceeds spendable balance (${formatCurrency(
           wallet.spendableBalanceString,
@@ -94,6 +169,46 @@ export function CreateTransferForm({
     // Validate memo (optional, but check length if provided)
     if (formData.memo && formData.memo.length > 200) {
       newErrors.memo = "Memo must be 200 characters or less";
+    }
+
+    // Validate business purpose for compliance (if provided or required)
+    if (
+      requiresAdditionalInfo() &&
+      (wallet.walletType === "cold" || isHighValueTransfer())
+    ) {
+      if (!formData.businessPurpose?.trim()) {
+        newErrors.businessPurpose =
+          "Business purpose is required for cold wallets and high-value transfers";
+      } else if (formData.businessPurpose.length > 500) {
+        newErrors.businessPurpose =
+          "Business purpose must be 500 characters or less";
+      }
+    } else if (
+      formData.businessPurpose &&
+      formData.businessPurpose.length > 500
+    ) {
+      newErrors.businessPurpose =
+        "Business purpose must be 500 characters or less";
+    }
+
+    // Validate requestor information for enhanced transfers
+    if (showAdvanced && requiresAdditionalInfo()) {
+      if (!formData.requestorEmail?.trim()) {
+        newErrors.requestorEmail =
+          "Requestor email is required for enhanced transfers";
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.requestorEmail)) {
+        newErrors.requestorEmail = "Please enter a valid email address";
+      }
+
+      if (!formData.requestorName?.trim()) {
+        newErrors.requestorName =
+          "Requestor name is required for enhanced transfers";
+      } else if (formData.requestorName.length < 2) {
+        newErrors.requestorName = "Name must be at least 2 characters";
+      } else if (!/^[a-zA-Z\s\-'.]+$/.test(formData.requestorName)) {
+        newErrors.requestorName =
+          "Name can only contain letters, spaces, hyphens, and apostrophes";
+      }
     }
 
     setErrors(newErrors);
@@ -125,7 +240,7 @@ export function CreateTransferForm({
   const handleInputChange = (field: keyof TransferFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     // Clear error for this field when user starts typing
-    if (errors[field]) {
+    if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
   };
@@ -377,9 +492,18 @@ export function CreateTransferForm({
                           handleInputChange("businessPurpose", e.target.value)
                         }
                         placeholder="e.g., Customer withdrawal, Exchange rebalancing"
-                        className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                        className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          errors.businessPurpose
+                            ? "border-red-300"
+                            : "border-gray-300"
+                        }`}
                         disabled={isSubmitting}
                       />
+                      {errors.businessPurpose && (
+                        <p className="text-red-600 text-sm">
+                          {errors.businessPurpose}
+                        </p>
+                      )}
                       <p className="text-sm text-gray-500">
                         Explain the business purpose for this transfer
                       </p>
@@ -401,9 +525,18 @@ export function CreateTransferForm({
                             handleInputChange("requestorName", e.target.value)
                           }
                           placeholder="Full name"
-                          className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                          className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.requestorName
+                              ? "border-red-300"
+                              : "border-gray-300"
+                          }`}
                           disabled={isSubmitting}
                         />
+                        {errors.requestorName && (
+                          <p className="text-red-600 text-sm">
+                            {errors.requestorName}
+                          </p>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -422,9 +555,18 @@ export function CreateTransferForm({
                             handleInputChange("requestorEmail", e.target.value)
                           }
                           placeholder="email@company.com"
-                          className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                          className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.requestorEmail
+                              ? "border-red-300"
+                              : "border-gray-300"
+                          }`}
                           disabled={isSubmitting}
                         />
+                        {errors.requestorEmail && (
+                          <p className="text-red-600 text-sm">
+                            {errors.requestorEmail}
+                          </p>
+                        )}
                       </div>
                     </div>
 
