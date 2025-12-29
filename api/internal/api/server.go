@@ -24,6 +24,7 @@ type Server struct {
 	pollingWorker   *services.TransferPollingWorker
 	notificationSvc services.NotificationService
 	coldWalletSvc   *services.ColdWalletService
+	warmWalletSvc   *services.WarmWalletService
 
 	// Repositories
 	walletRepo          repository.WalletRepository
@@ -52,6 +53,9 @@ func NewServer(db *sql.DB, cfg *config.Config) *Server {
 	// Initialize cold wallet service
 	server.initColdWalletService()
 
+	// Initialize warm wallet service
+	server.initWarmWalletService()
+
 	// Setup router
 	server.setupRouter()
 
@@ -65,13 +69,11 @@ func (s *Server) initBitGoClient() {
 	bitgoConfig := bitgo.Config{
 		BaseURL:     s.config.BitGoBaseURL,
 		AccessToken: s.config.BitGoAccessToken,
-		Logger:      logger,
 		Timeout:     30 * time.Second,
 		MaxRetries:  3,
-		APIVersion:  "v2",
 	}
 
-	s.bitgoClient = bitgo.NewClient(bitgoConfig)
+	s.bitgoClient = bitgo.NewClient(bitgoConfig, logger)
 }
 
 func (s *Server) initNotificationService() {
@@ -137,6 +139,34 @@ func (s *Server) initColdWalletService() {
 		s.notificationSvc,
 		logger,
 		coldConfig,
+	)
+}
+
+func (s *Server) initWarmWalletService() {
+	// Create warm wallet service configuration
+	warmConfig := services.DefaultWarmWalletConfig()
+
+	// Override with environment-specific settings
+	if s.config.GinMode == "release" {
+		warmConfig.RequiredApprovals = 1
+		warmConfig.ApprovalTimeoutHours = 24
+		warmConfig.AutoProcessThreshold = "10.0"
+	} else {
+		// Development settings
+		warmConfig.RequiredApprovals = 0
+		warmConfig.ApprovalTimeoutHours = 12
+		warmConfig.AutoProcessThreshold = "5.0"
+	}
+
+	// Create warm wallet service
+	logger := &SimpleLogger{}
+	s.warmWalletSvc = services.NewWarmWalletService(
+		s.bitgoClient,
+		s.walletRepo,
+		s.transferRequestRepo,
+		s.notificationSvc,
+		logger,
+		warmConfig,
 	)
 }
 
@@ -206,6 +236,15 @@ func (s *Server) setupRouter() {
 					cold.POST("", s.createColdTransfer)
 					cold.GET("/sla", s.getColdTransfersSLA)
 					cold.GET("/admin-queue", s.getColdTransfersAdminQueue)
+				}
+
+				// Warm transfer routes
+				warm := transfers.Group("/warm")
+				{
+					warm.POST("", s.createWarmTransfer)
+					warm.GET("/sla", s.getWarmTransfersSLA)
+					warm.GET("/analytics", s.getWarmTransfersAnalytics)
+					warm.POST("/:id/process", s.processWarmTransfer)
 				}
 			}
 

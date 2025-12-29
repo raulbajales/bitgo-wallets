@@ -1,12 +1,12 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
-	"context"
 
-	"bitgo-wallets-api/internal/models"
 	"bitgo-wallets-api/internal/bitgo"
+	"bitgo-wallets-api/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -206,7 +206,7 @@ func (s *Server) discoverWallets(c *gin.Context) {
 	if coin == "" {
 		coin = "tbtc" // Default to testnet Bitcoin
 	}
-	
+
 	// List wallets from BitGo
 	ctx := context.Background()
 	bitgoWallets, err := s.bitgoClient.ListWallets(ctx, coin, bitgo.ListWalletsParams{
@@ -214,18 +214,18 @@ func (s *Server) discoverWallets(c *gin.Context) {
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to discover wallets from BitGo",
+			"error":   "Failed to discover wallets from BitGo",
 			"details": err.Error(),
 		})
 		return
 	}
-	
+
 	// Get organization ID (in a real implementation, get from user context)
 	orgID := uuid.New()
-	
+
 	var syncedWallets []models.Wallet
 	var errors []string
-	
+
 	for _, bgWallet := range bitgoWallets.Wallets {
 		// Check if wallet already exists
 		existingWallet, err := s.walletRepo.GetByBitgoID(bgWallet.ID)
@@ -235,7 +235,7 @@ func (s *Server) discoverWallets(c *gin.Context) {
 			existingWallet.BalanceString = bgWallet.BalanceString
 			existingWallet.ConfirmedBalanceString = bgWallet.ConfirmedBalanceString
 			existingWallet.SpendableBalanceString = bgWallet.SpendableBalanceString
-			
+
 			if err := s.walletRepo.Update(existingWallet); err != nil {
 				errors = append(errors, "Failed to update wallet "+bgWallet.ID+": "+err.Error())
 			} else {
@@ -243,7 +243,7 @@ func (s *Server) discoverWallets(c *gin.Context) {
 			}
 			continue
 		}
-		
+
 		// Convert BitGo wallet type
 		var walletType models.WalletType
 		switch bgWallet.Type {
@@ -256,7 +256,7 @@ func (s *Server) discoverWallets(c *gin.Context) {
 		default:
 			walletType = models.WalletTypeHot // Default
 		}
-		
+
 		// Create new wallet
 		wallet := &models.Wallet{
 			OrganizationID:         orgID,
@@ -271,23 +271,23 @@ func (s *Server) discoverWallets(c *gin.Context) {
 			Frozen:                 false,
 			Threshold:              2, // Default
 		}
-		
+
 		if err := s.walletRepo.Create(wallet); err != nil {
 			errors = append(errors, "Failed to create wallet "+bgWallet.ID+": "+err.Error())
 		} else {
 			syncedWallets = append(syncedWallets, *wallet)
 		}
 	}
-	
+
 	response := gin.H{
 		"synced_count": len(syncedWallets),
-		"wallets": syncedWallets,
+		"wallets":      syncedWallets,
 	}
-	
+
 	if len(errors) > 0 {
 		response["errors"] = errors
 	}
-	
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -299,35 +299,34 @@ func (s *Server) syncWalletBalance(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid wallet ID"})
 		return
 	}
-	
+
 	// Get wallet from database
 	wallet, err := s.walletRepo.GetByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Wallet not found"})
 		return
 	}
-	
+
 	// Get balance from BitGo
 	ctx := context.Background()
 	balance, err := s.bitgoClient.GetWalletBalance(ctx, wallet.BitgoWalletID, wallet.Coin)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get wallet balance from BitGo",
+			"error":   "Failed to get wallet balance from BitGo",
 			"details": err.Error(),
 		})
 		return
 	}
-	
+
 	// Update wallet in database
 	wallet.BalanceString = balance.Balance
 	wallet.ConfirmedBalanceString = balance.ConfirmedBalance
 	wallet.SpendableBalanceString = balance.SpendableBalance
-	
+
 	if err := s.walletRepo.Update(wallet); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update wallet balance"})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, wallet)
-}
 }

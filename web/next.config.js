@@ -1,8 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    experimental: {
-        appDir: true,
-    },
+    // App Router is enabled by default when using the app directory
 }
 
 module.exports = nextConfig

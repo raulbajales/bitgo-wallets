@@ -32,8 +32,10 @@ type Wallet struct {
 type WalletType string
 
 const (
-	WalletTypeWarm WalletType = "warm"
-	WalletTypeCold WalletType = "cold"
+	WalletTypeCustodial WalletType = "custodial"
+	WalletTypeHot       WalletType = "hot"
+	WalletTypeWarm      WalletType = "warm"
+	WalletTypeCold      WalletType = "cold"
 )
 
 // JSON type for handling JSONB in PostgreSQL

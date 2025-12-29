@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +21,13 @@ type CreateTransferRequest struct {
 	Coin             string            `json:"coin" binding:"required"`
 	TransferType     models.WalletType `json:"transfer_type" binding:"required"`
 	Memo             *string           `json:"memo"`
+	
+	// Additional fields for warm/cold transfers
+	BusinessPurpose  string `json:"business_purpose,omitempty"`
+	RequestorName    string `json:"requestor_name,omitempty"`
+	RequestorEmail   string `json:"requestor_email,omitempty"`
+	UrgencyLevel     string `json:"urgency_level,omitempty"`
+	AutoProcess      bool   `json:"auto_process,omitempty"` // For warm transfers
 }
 
 type UpdateTransferStatusRequest struct {
@@ -41,7 +49,7 @@ func (s *Server) createTransfer(c *gin.Context) {
 		return
 	}
 
-	// Verify wallet exists
+	// Verify wallet exists and get its type
 	wallet, err := s.walletRepo.GetByID(walletID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get wallet"})
@@ -55,7 +63,76 @@ func (s *Server) createTransfer(c *gin.Context) {
 
 	// Get current user ID
 	userID := s.getCurrentUserID(c)
+	ctx := context.Background()
 
+	// Delegate to appropriate service based on wallet type
+	switch wallet.WalletType {
+	case models.WalletTypeCold:
+		// Create cold transfer request
+		coldReq := services.ColdTransferRequest{
+			WalletID:         walletID,
+			RecipientAddress: req.RecipientAddress,
+			AmountString:     req.AmountString,
+			Coin:             req.Coin,
+			BusinessPurpose:  req.BusinessPurpose,
+			RequestorName:    req.RequestorName,
+			RequestorEmail:   req.RequestorEmail,
+			UrgencyLevel:     req.UrgencyLevel,
+			Memo:             func() string { if req.Memo != nil { return *req.Memo } return "" }(),
+		}
+
+		transfer, err := s.coldWalletSvc.CreateColdTransferRequest(ctx, coldReq, userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"transfer": transfer,
+			"message":  "Cold transfer request created successfully",
+			"type":     "cold",
+		})
+
+	case models.WalletTypeWarm:
+		// Create warm transfer request
+		warmReq := services.WarmTransferRequest{
+			WalletID:         walletID,
+			RecipientAddress: req.RecipientAddress,
+			AmountString:     req.AmountString,
+			Coin:             req.Coin,
+			BusinessPurpose:  req.BusinessPurpose,
+			RequestorName:    req.RequestorName,
+			RequestorEmail:   req.RequestorEmail,
+			UrgencyLevel:     req.UrgencyLevel,
+			Memo:             func() string { if req.Memo != nil { return *req.Memo } return "" }(),
+			AutoProcess:      req.AutoProcess,
+		}
+
+		transfer, err := s.warmWalletSvc.CreateWarmTransferRequest(ctx, warmReq, userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"transfer": transfer,
+			"message":  "Warm transfer request created successfully",
+			"type":     "warm",
+		})
+
+	case models.WalletTypeHot:
+		// For hot wallets, use the original immediate processing logic
+		s.createHotTransfer(c, walletID, wallet, req, userID)
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Unsupported wallet type: %s", wallet.WalletType),
+		})
+	}
+}
+
+// createHotTransfer handles immediate processing for hot wallets
+func (s *Server) createHotTransfer(c *gin.Context, walletID uuid.UUID, wallet *models.Wallet, req CreateTransferRequest, userID uuid.UUID) {
 	// Create transfer request in our database first
 	transferRequest := &models.TransferRequest{
 		WalletID:          walletID,
@@ -63,16 +140,11 @@ func (s *Server) createTransfer(c *gin.Context) {
 		RecipientAddress:  req.RecipientAddress,
 		AmountString:      req.AmountString,
 		Coin:              req.Coin,
-		TransferType:      req.TransferType,
+		TransferType:      models.WalletTypeHot,
 		Status:            models.TransferStatusDraft,
-		RequiredApprovals: 1,
+		RequiredApprovals: 0, // Hot transfers require no approvals
 		ReceivedApprovals: 0,
 		Memo:              req.Memo,
-	}
-
-	// Set different approval requirements based on transfer type
-	if req.TransferType == models.WalletTypeCold {
-		transferRequest.RequiredApprovals = 2 // Cold transfers need more approvals
 	}
 
 	if err := s.transferRequestRepo.Create(transferRequest); err != nil {
@@ -80,26 +152,25 @@ func (s *Server) createTransfer(c *gin.Context) {
 		return
 	}
 
-	// Try to build the transfer with BitGo
+	// Try to build the transfer with BitGo immediately
 	ctx := context.Background()
+	memoStr := ""
+	if req.Memo != nil {
+		memoStr = *req.Memo
+	}
+	
 	buildRequest := bitgo.BuildTransferRequest{
 		Recipients: []bitgo.TransferRecipient{
 			{
-				Address: req.RecipientAddress,
-				Amount:  req.AmountString,
+				Address:      req.RecipientAddress,
+				AmountString: req.AmountString,
 			},
 		},
-		Memo: req.Memo,
+		Memo: memoStr,
 	}
 
-	// Get idempotent transfer builder
-	idempotentBuilder := bitgo.NewIdempotentTransferBuilder(
-		s.bitgoClient,
-		s.bitgoClient.GetIdempotencyService(),
-	)
-
-	// Build transfer with idempotency
-	buildResponse, err := idempotentBuilder.BuildTransferIdempotent(
+	// Build transfer with BitGo
+	buildResponse, err := s.bitgoClient.BuildTransfer(
 		ctx,
 		wallet.BitgoWalletID,
 		wallet.Coin,
@@ -119,10 +190,14 @@ func (s *Server) createTransfer(c *gin.Context) {
 	}
 
 	// Update transfer request with BitGo transaction info
-	transferRequest.Status = models.TransferStatusPendingApproval
-	transferRequest.BitgoTxid = &buildResponse.TxId
-	transferRequest.Fee = buildResponse.Fee
-	transferRequest.FeeRate = buildResponse.FeeRate
+	transferRequest.Status = models.TransferStatusSigned // Hot transfers go directly to signed
+	if buildResponse.Transfer != nil {
+		transferRequest.BitgoTxid = &buildResponse.Transfer.TxID
+	}
+	if buildResponse.FeeInfo != nil {
+		transferRequest.Fee = buildResponse.FeeInfo.FeeString
+		transferRequest.FeeRate = buildResponse.FeeInfo.FeeRate
+	}
 
 	if err := s.transferRequestRepo.Update(transferRequest); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update transfer request"})
@@ -131,8 +206,9 @@ func (s *Server) createTransfer(c *gin.Context) {
 
 	// Return the transfer request with BitGo transaction details
 	response := gin.H{
-		"transfer_request": transferRequest,
-		"bitgo_tx_preview": buildResponse,
+		"transfer": transferRequest,
+		"message":  "Hot transfer created and ready for broadcast",
+		"type":     "hot",
 	}
 
 	c.JSON(http.StatusCreated, response)
@@ -604,4 +680,185 @@ func (s *Server) getApprovers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"approvers": approvers,
 	})
+}
+
+// WARM TRANSFER ENDPOINTS
+
+// createWarmTransfer creates a new warm storage transfer request
+func (s *Server) createWarmTransfer(c *gin.Context) {
+	var req services.WarmTransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get user ID from context (this would come from JWT token in real implementation)
+	userID := uuid.New() // Mock user ID
+	ctx := context.Background()
+
+	transfer, err := s.warmWalletSvc.CreateWarmTransferRequest(ctx, req, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"transfer": transfer,
+		"message":  "Warm transfer request created successfully",
+	})
+}
+
+// getWarmTransfersSLA gets SLA status for warm transfers
+func (s *Server) getWarmTransfersSLA(c *gin.Context) {
+	ctx := context.Background()
+	slaStatus, err := s.warmWalletSvc.GetWarmTransfersSLAStatus(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get warm transfers SLA status"})
+		return
+	}
+
+	c.JSON(http.StatusOK, slaStatus)
+}
+
+// getWarmTransfersAnalytics gets analytics and metrics for warm transfers
+func (s *Server) getWarmTransfersAnalytics(c *gin.Context) {
+	ctx := context.Background()
+	
+	// Get basic SLA status
+	slaStatus, err := s.warmWalletSvc.GetWarmTransfersSLAStatus(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get analytics"})
+		return
+	}
+
+	// Get all warm transfers for additional analytics
+	warmStatuses := []models.TransferStatus{
+		models.TransferStatusSubmitted,
+		models.TransferStatusPendingApproval,
+		models.TransferStatusApproved,
+		models.TransferStatusSigned,
+		models.TransferStatusBroadcast,
+		models.TransferStatusCompleted,
+	}
+
+	transfers, err := s.transferRequestRepo.GetTransfersByStatuses(warmStatuses, 1000)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transfers"})
+		return
+	}
+
+	// Filter warm transfers
+	warmTransfers := make([]*models.TransferRequest, 0)
+	for _, transfer := range transfers {
+		if transfer.TransferType == models.WalletTypeWarm {
+			warmTransfers = append(warmTransfers, transfer)
+		}
+	}
+
+	// Calculate additional metrics
+	totalVolume := 0.0
+	avgProcessingTime := 0.0
+	statusBreakdown := make(map[models.TransferStatus]int)
+
+	for _, transfer := range warmTransfers {
+		// Parse amount for volume calculation
+		if amount, err := parseAmountFloat(transfer.AmountString); err == nil {
+			totalVolume += amount
+		}
+
+		// Status breakdown
+		statusBreakdown[transfer.Status]++
+
+		// Processing time calculation (simplified)
+		if transfer.Status == models.TransferStatusCompleted && transfer.UpdatedAt != nil {
+			processingTime := transfer.UpdatedAt.Sub(transfer.CreatedAt).Hours()
+			avgProcessingTime += processingTime
+		}
+	}
+
+	if len(warmTransfers) > 0 {
+		avgProcessingTime = avgProcessingTime / float64(len(warmTransfers))
+	}
+
+	analytics := map[string]interface{}{
+		"sla_status":           slaStatus,
+		"total_volume":         totalVolume,
+		"avg_processing_hours": avgProcessingTime,
+		"status_breakdown":     statusBreakdown,
+		"transfer_count":       len(warmTransfers),
+	}
+
+	c.JSON(http.StatusOK, analytics)
+}
+
+// processWarmTransfer manually processes a warm transfer (for admin override)
+func (s *Server) processWarmTransfer(c *gin.Context) {
+	transferID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid transfer ID"})
+		return
+	}
+
+	var req struct {
+		Action string `json:"action" binding:"required"` // "approve", "reject", "process"
+		Notes  string `json:"notes"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get the transfer
+	transfer, err := s.transferRequestRepo.GetByID(transferID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Transfer not found"})
+		return
+	}
+
+	if transfer.TransferType != models.WalletTypeWarm {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Transfer is not a warm storage transfer"})
+		return
+	}
+
+	ctx := context.Background()
+
+	switch req.Action {
+	case "approve":
+		transfer.Status = models.TransferStatusApproved
+		transfer.ReceivedApprovals = transfer.RequiredApprovals
+	case "reject":
+		transfer.Status = models.TransferStatusRejected
+	case "process":
+		// Trigger automated processing
+		if transfer.Status == models.TransferStatusApproved {
+			// This would trigger the actual BitGo processing
+			// For now, we'll just update the status
+			transfer.Status = models.TransferStatusSigned
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Transfer must be approved before processing"})
+			return
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid action. Must be 'approve', 'reject', or 'process'"})
+		return
+	}
+
+	if err := s.transferRequestRepo.Update(transfer); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update transfer"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"transfer": transfer,
+		"message":  fmt.Sprintf("Transfer %s successfully", req.Action),
+		"notes":    req.Notes,
+	})
+}
+
+// Helper function to parse amount as float
+func parseAmountFloat(amountStr string) (float64, error) {
+	var amount float64
+	_, err := fmt.Sscanf(amountStr, "%f", &amount)
+	return amount, err
 }

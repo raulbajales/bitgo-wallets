@@ -10,84 +10,51 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { WalletCard, type Wallet } from "@/components/wallets/wallet-card";
-
+import { WalletCard, type Wallet } from "./wallet-card";
+import {
+  CreateTransferForm,
+  type TransferFormData,
+} from "../transfers/create-transfer-form";
+import api from "@/lib/api";
 export function WalletDashboard() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [showTransferForm, setShowTransferForm] = useState(false);
+  const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null);
 
-  // Mock data for development - replace with actual API calls
+  // Load wallets from API
   useEffect(() => {
-    // Simulate API call
-    const mockWallets: Wallet[] = [
-      {
-        id: "1",
-        bitgoWalletId: "64a5b2c8e9f1a2b3c4d5e6f7",
-        label: "Main Bitcoin Wallet",
-        coin: "btc",
-        walletType: "custodial",
-        balanceString: "1.25430000",
-        confirmedBalanceString: "1.25430000",
-        spendableBalanceString: "1.20000000",
-        isActive: true,
-        frozen: false,
-        tags: ["production", "main"],
-        createdAt: "2024-01-15T10:00:00Z",
-        updatedAt: "2024-01-20T14:30:00Z",
-      },
-      {
-        id: "2",
-        bitgoWalletId: "74b6c3d9faeafcd4e5f6g8h9",
-        label: "Ethereum Treasury",
-        coin: "eth",
-        walletType: "cold",
-        balanceString: "45.75000000",
-        confirmedBalanceString: "45.75000000",
-        spendableBalanceString: "40.00000000",
-        isActive: true,
-        frozen: false,
-        tags: ["treasury", "cold-storage"],
-        createdAt: "2024-01-10T08:00:00Z",
-        updatedAt: "2024-01-19T16:45:00Z",
-      },
-      {
-        id: "3",
-        bitgoWalletId: "84c7d4eafbfbade5f6g7h9i0",
-        label: "USDC Operations",
-        coin: "usdc",
-        walletType: "hot",
-        balanceString: "50000.000000",
-        confirmedBalanceString: "50000.000000",
-        spendableBalanceString: "48500.000000",
-        isActive: true,
-        frozen: false,
-        tags: ["operations", "stablecoin"],
-        createdAt: "2024-01-12T12:00:00Z",
-        updatedAt: "2024-01-21T09:15:00Z",
-      },
-    ];
-
-    setTimeout(() => {
-      setWallets(mockWallets);
-      setLoading(false);
-    }, 1000);
+    loadWallets();
   }, []);
+
+  const loadWallets = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await api.get("/api/v1/wallets");
+      setWallets(response.data.wallets || []);
+    } catch (err) {
+      console.error("Failed to load wallets:", err);
+      setError("Failed to load wallets");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDiscoverWallets = async () => {
     try {
       setLoading(true);
-      // TODO: Implement actual API call
-      // const response = await fetch('/api/v1/wallets/discover')
-      // const data = await response.json()
+      setError(null);
 
-      // Mock discovery
-      setTimeout(() => {
-        setLoading(false);
-        // Could add newly discovered wallets to the list
-      }, 2000);
+      const response = await api.get("/api/v1/wallets/discover");
+
+      // Reload wallets to get the newly discovered ones
+      await loadWallets();
     } catch (err) {
+      console.error("Failed to discover wallets:", err);
       setError("Failed to discover wallets");
       setLoading(false);
     }
@@ -99,29 +66,64 @@ export function WalletDashboard() {
   };
 
   const handleCreateTransfer = (wallet: Wallet) => {
-    // TODO: Navigate to transfer creation form
-    console.log("Create transfer for wallet:", wallet.id);
+    setSelectedWallet(wallet);
+    setShowTransferForm(true);
+  };
+
+  const handleTransferSubmit = async (transferData: TransferFormData) => {
+    if (!selectedWallet) {
+      throw new Error("No wallet selected");
+    }
+
+    try {
+      setError(null);
+
+      // Call the API to create the transfer
+      const response = await api.post(
+        `/api/v1/wallets/${selectedWallet.id}/transfers`,
+        {
+          recipient_address: transferData.recipientAddress,
+          amount_string: transferData.amountString,
+          coin: transferData.coin,
+          transfer_type: transferData.transferType,
+          memo: transferData.memo,
+          business_purpose: transferData.businessPurpose,
+          requestor_name: transferData.requestorName,
+          requestor_email: transferData.requestorEmail,
+          urgency_level: transferData.urgencyLevel,
+          auto_process: transferData.autoProcess,
+        }
+      );
+
+      // Close the form and reload wallets
+      setShowTransferForm(false);
+      setSelectedWallet(null);
+      await loadWallets();
+
+      // Could show a success message here
+    } catch (err) {
+      // Let the form handle the error display
+      throw err;
+    }
+  };
+
+  const handleCancelTransfer = () => {
+    setShowTransferForm(false);
+    setSelectedWallet(null);
   };
 
   const handleSyncBalance = async (wallet: Wallet) => {
     try {
       setSyncing(wallet.id);
-      // TODO: Implement actual API call
-      // await fetch(`/api/v1/wallets/${wallet.id}/sync-balance`, { method: 'POST' })
+      setError(null);
 
-      // Mock sync
-      setTimeout(() => {
-        setSyncing(null);
-        // Update wallet balances
-        setWallets((prev) =>
-          prev.map((w) =>
-            w.id === wallet.id
-              ? { ...w, updatedAt: new Date().toISOString() }
-              : w
-          )
-        );
-      }, 1500);
+      await api.post(`/api/v1/wallets/${wallet.id}/sync-balance`);
+
+      // Reload wallets to get updated balances
+      await loadWallets();
+      setSyncing(null);
     } catch (err) {
+      console.error("Failed to sync wallet balance:", err);
       setError("Failed to sync wallet balance");
       setSyncing(null);
     }
@@ -322,6 +324,19 @@ export function WalletDashboard() {
                 <p>Syncing wallet balance...</p>
               </div>
             </Card>
+          </div>
+        )}
+
+        {/* Transfer Form Modal */}
+        {showTransferForm && selectedWallet && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <CreateTransferForm
+                wallet={selectedWallet}
+                onSubmit={handleTransferSubmit}
+                onCancel={handleCancelTransfer}
+              />
+            </div>
           </div>
         )}
       </div>

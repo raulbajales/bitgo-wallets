@@ -23,8 +23,15 @@ export interface TransferFormData {
   recipientAddress: string;
   amountString: string;
   coin: string;
-  transferType: "custodial" | "hot" | "cold";
+  transferType: "custodial" | "hot" | "cold" | "warm";
   memo?: string;
+
+  // Additional fields for warm/cold transfers
+  businessPurpose?: string;
+  requestorName?: string;
+  requestorEmail?: string;
+  urgencyLevel?: "low" | "normal" | "high" | "critical";
+  autoProcess?: boolean; // For warm transfers
 }
 
 interface FormErrors {
@@ -43,8 +50,13 @@ export function CreateTransferForm({
     recipientAddress: "",
     amountString: "",
     coin: wallet.coin,
-    transferType: wallet.walletType as "custodial" | "hot" | "cold",
+    transferType: wallet.walletType as "custodial" | "hot" | "cold" | "warm",
     memo: "",
+    businessPurpose: "",
+    requestorName: "",
+    requestorEmail: "",
+    urgencyLevel: "normal",
+    autoProcess: wallet.walletType === "warm", // Default to auto for warm wallets
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
@@ -121,9 +133,11 @@ export function CreateTransferForm({
   const getTransferTypeDescription = () => {
     switch (wallet.walletType) {
       case "custodial":
-        return "Instant transfer with automated approval for warm wallet operations";
+        return "Instant transfer with automated approval for custodial wallet operations";
       case "hot":
-        return "Fast transfer for operational use, may require approval";
+        return "Fast transfer for operational use, may require minimal approval";
+      case "warm":
+        return "Semi-automated transfer with risk assessment and optional manual review";
       case "cold":
         return "High-security transfer with manual approval process and longer processing time";
       default:
@@ -137,11 +151,23 @@ export function CreateTransferForm({
         return "1-5 minutes";
       case "hot":
         return "5-15 minutes";
+      case "warm":
+        return "15 minutes - 2 hours";
       case "cold":
-        return "1-24 hours";
+        return "1-72 hours";
       default:
         return "Unknown";
     }
+  };
+
+  const requiresAdditionalInfo = () => {
+    return wallet.walletType === "warm" || wallet.walletType === "cold";
+  };
+
+  const isHighValueTransfer = () => {
+    const amount = parseFloat(formData.amountString || "0");
+    const threshold = wallet.walletType === "cold" ? 1.0 : 10.0; // Different thresholds
+    return amount >= threshold;
   };
 
   return (
@@ -326,6 +352,143 @@ export function CreateTransferForm({
                     {formData.memo?.length || 0}/200 characters
                   </p>
                 </div>
+
+                {/* Warm/Cold Wallet Additional Fields */}
+                {requiresAdditionalInfo() && (
+                  <>
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="businessPurpose"
+                        className="block text-sm font-medium text-gray-700"
+                      >
+                        Business Purpose{" "}
+                        {wallet.walletType === "cold" ||
+                        isHighValueTransfer() ? (
+                          <span className="text-red-500">*</span>
+                        ) : (
+                          ""
+                        )}
+                      </label>
+                      <input
+                        type="text"
+                        id="businessPurpose"
+                        value={formData.businessPurpose}
+                        onChange={(e) =>
+                          handleInputChange("businessPurpose", e.target.value)
+                        }
+                        placeholder="e.g., Customer withdrawal, Exchange rebalancing"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                        disabled={isSubmitting}
+                      />
+                      <p className="text-sm text-gray-500">
+                        Explain the business purpose for this transfer
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="requestorName"
+                          className="block text-sm font-medium text-gray-700"
+                        >
+                          Requestor Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="requestorName"
+                          value={formData.requestorName}
+                          onChange={(e) =>
+                            handleInputChange("requestorName", e.target.value)
+                          }
+                          placeholder="Full name"
+                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                          disabled={isSubmitting}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="requestorEmail"
+                          className="block text-sm font-medium text-gray-700"
+                        >
+                          Requestor Email{" "}
+                          <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          id="requestorEmail"
+                          value={formData.requestorEmail}
+                          onChange={(e) =>
+                            handleInputChange("requestorEmail", e.target.value)
+                          }
+                          placeholder="email@company.com"
+                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                          disabled={isSubmitting}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="urgencyLevel"
+                        className="block text-sm font-medium text-gray-700"
+                      >
+                        Urgency Level
+                      </label>
+                      <select
+                        id="urgencyLevel"
+                        value={formData.urgencyLevel}
+                        onChange={(e) =>
+                          handleInputChange("urgencyLevel", e.target.value)
+                        }
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                        disabled={isSubmitting}
+                      >
+                        <option value="low">Low - Standard processing</option>
+                        <option value="normal">
+                          Normal - Regular priority
+                        </option>
+                        <option value="high">
+                          High - Expedited processing
+                        </option>
+                        <option value="critical">
+                          Critical - Urgent processing
+                        </option>
+                      </select>
+                    </div>
+
+                    {/* Auto-process option for warm wallets */}
+                    {wallet.walletType === "warm" && (
+                      <div className="space-y-2">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            id="autoProcess"
+                            checked={formData.autoProcess}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                autoProcess: e.target.checked,
+                              }))
+                            }
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            disabled={isSubmitting}
+                          />
+                          <label
+                            htmlFor="autoProcess"
+                            className="ml-2 text-sm text-gray-700"
+                          >
+                            Enable automatic processing (if eligible)
+                          </label>
+                        </div>
+                        <p className="text-sm text-gray-500">
+                          Small transfers with low risk scores may be processed
+                          automatically
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
@@ -353,8 +516,41 @@ export function CreateTransferForm({
                     <div className="mt-1 text-sm text-yellow-700">
                       <p>
                         This transfer requires manual approval and may take up
-                        to 24 hours to process. You will be notified when
+                        to 72 hours to process. You will be notified when
                         approvals are needed.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Info for Warm Wallets */}
+            {wallet.walletType === "warm" && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg
+                      className="h-5 w-5 text-blue-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-blue-800">
+                      Warm Wallet Transfer
+                    </h3>
+                    <div className="mt-1 text-sm text-blue-700">
+                      <p>
+                        This transfer includes risk assessment and may be
+                        processed automatically for small amounts. Larger
+                        transfers may require approval.
                       </p>
                     </div>
                   </div>
