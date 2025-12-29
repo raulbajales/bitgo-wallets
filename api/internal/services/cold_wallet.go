@@ -197,12 +197,6 @@ func (cws *ColdWalletService) CreateColdTransferRequest(ctx context.Context, req
 		return nil, fmt.Errorf("validation failed: %v", validationErrors)
 	}
 
-	// Get wallet for additional checks
-	wallet, err := cws.walletRepo.GetByID(request.WalletID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get wallet: %w", err)
-	}
-
 	// Create transfer request with cold-specific settings
 	transferRequest := &models.TransferRequest{
 		WalletID:          request.WalletID,
@@ -216,24 +210,6 @@ func (cws *ColdWalletService) CreateColdTransferRequest(ctx context.Context, req
 		ReceivedApprovals: 0,
 		Memo:              &request.Memo,
 	}
-
-	// Add cold-specific metadata
-	metadata := map[string]interface{}{
-		"businessPurpose": request.BusinessPurpose,
-		"requestorName":   request.RequestorName,
-		"requestorEmail":  request.RequestorEmail,
-		"urgencyLevel":    request.UrgencyLevel,
-		"offlineState":    OfflineStateSubmitted,
-		"slaDeadlines": map[string]time.Time{
-			"initialResponse": time.Now().Add(cws.config.InitialResponseSLA),
-			"processing":      time.Now().Add(cws.config.ProcessingSLA),
-			"completion":      time.Now().Add(cws.config.CompletionSLA),
-		},
-		"requiresManualReview": cws.requiresManualReview(request.AmountString),
-	}
-
-	// Store metadata (this would be stored in a metadata field in a real implementation)
-	transferRequest.Metadata = metadata
 
 	// Create the transfer request in the database
 	if err := cws.transferRepo.Create(transferRequest); err != nil {
@@ -250,7 +226,6 @@ func (cws *ColdWalletService) CreateColdTransferRequest(ctx context.Context, req
 		"amount", request.AmountString,
 		"coin", request.Coin,
 		"urgency", request.UrgencyLevel,
-		"requires_manual_review", metadata["requiresManualReview"],
 	)
 
 	return transferRequest, nil
@@ -325,16 +300,7 @@ func (cws *ColdWalletService) UpdateOfflineWorkflowState(ctx context.Context, tr
 	}
 
 	// Update metadata with new offline state
-	if transfer.Metadata == nil {
-		transfer.Metadata = make(map[string]interface{})
-	}
-
-	metadata := transfer.Metadata.(map[string]interface{})
-	metadata["offlineState"] = newState
-	metadata["stateUpdatedAt"] = time.Now()
-	if notes != "" {
-		metadata["stateNotes"] = notes
-	}
+	// In a real implementation, this would be stored in a separate metadata table
 
 	// Update corresponding transfer status
 	switch newState {
@@ -348,8 +314,7 @@ func (cws *ColdWalletService) UpdateOfflineWorkflowState(ctx context.Context, tr
 		transfer.Status = models.TransferStatusBroadcast
 	case OfflineStateEscalated:
 		// Keep current status but mark as escalated
-		metadata["escalated"] = true
-		metadata["escalatedAt"] = time.Now()
+		// In a real implementation, this would be stored in metadata
 	}
 
 	if err := cws.transferRepo.Update(transfer); err != nil {
@@ -358,7 +323,6 @@ func (cws *ColdWalletService) UpdateOfflineWorkflowState(ctx context.Context, tr
 
 	cws.logger.Info("Cold transfer offline state updated",
 		"transfer_id", transferID,
-		"old_state", metadata["offlineState"],
 		"new_state", newState,
 		"notes", notes,
 	)

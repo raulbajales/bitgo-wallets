@@ -12,7 +12,9 @@ type Config struct {
 	AdminPassword    string
 	BitGoBaseURL     string
 	BitGoAccessToken string
-	BitGoEnvironment string	WebhookURL        string}
+	BitGoEnvironment string
+	WebhookURL       string
+}
 
 func Load() *Config {
 	return &Config{

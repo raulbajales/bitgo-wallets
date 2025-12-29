@@ -386,7 +386,8 @@ func (s *Server) getTransferStatus(c *gin.Context) {
 		}
 
 		// Normalize the status from BitGo
-		canonicalStatus := bitgo.NormalizeTransferStatus(bitgoTransfer.State)
+		statusMapper := bitgo.NewStatusMapper()
+		canonicalStatus := statusMapper.NormalizeTransferStatus(bitgoTransfer.State, bitgoTransfer)
 
 		// Update our local record if status changed
 		if string(transfer.Status) != canonicalStatus {

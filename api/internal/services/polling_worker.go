@@ -298,8 +298,9 @@ func (w *TransferPollingWorker) updateTransferStatus(ctx context.Context, transf
 		return false, fmt.Errorf("failed to get BitGo transfer: %w", err)
 	}
 
-	// Normalize status
-	canonicalStatus := bitgo.NormalizeTransferStatus(bitgoTransfer.State)
+	// Normalize status using status mapper
+	statusMapper := bitgo.NewStatusMapper()
+	canonicalStatus := statusMapper.NormalizeTransferStatus(bitgoTransfer.State, bitgoTransfer)
 	newStatus := models.TransferStatus(canonicalStatus)
 
 	// Check if status changed

@@ -2,6 +2,7 @@ package bitgo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -151,10 +152,18 @@ func (as *ApprovalService) ListPendingApprovals(ctx context.Context, params List
 		}
 	}
 
-	var response ListApprovalsResponse
-	err := as.client.makeRequest(ctx, "GET", path, nil, &response)
+	resp, err := as.client.makeRequest(ctx, RequestOptions{
+		Method: "GET",
+		Path:   path,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pending approvals: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var response ListApprovalsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode list approvals response: %w", err)
 	}
 
 	as.logger.Info("Listed pending approvals",
@@ -170,10 +179,18 @@ func (as *ApprovalService) ListPendingApprovals(ctx context.Context, params List
 func (as *ApprovalService) GetApproval(ctx context.Context, approvalID string) (*ApprovalInfo, error) {
 	path := fmt.Sprintf("/pendingapprovals/%s", approvalID)
 
-	var approval ApprovalInfo
-	err := as.client.makeRequest(ctx, "GET", path, nil, &approval)
+	resp, err := as.client.makeRequest(ctx, RequestOptions{
+		Method: "GET",
+		Path:   path,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get approval %s: %w", approvalID, err)
+	}
+	defer resp.Body.Close()
+
+	var approval ApprovalInfo
+	if err := json.NewDecoder(resp.Body).Decode(&approval); err != nil {
+		return nil, fmt.Errorf("failed to decode approval response: %w", err)
 	}
 
 	as.logger.Info("Retrieved approval info",
