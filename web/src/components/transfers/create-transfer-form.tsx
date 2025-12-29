@@ -246,7 +246,7 @@ export function CreateTransferForm({
                   handleInputChange("recipientAddress", e.target.value)
                 }
                 placeholder={`Enter ${wallet.coin.toUpperCase()} address`}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                   errors.recipientAddress ? "border-red-300" : "border-gray-300"
                 }`}
                 disabled={isSubmitting}
@@ -277,7 +277,7 @@ export function CreateTransferForm({
                   placeholder="0.00000000"
                   step="any"
                   min="0"
-                  className={`w-full px-3 py-2 pr-16 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`w-full px-3 py-2 pr-16 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.amountString ? "border-red-300" : "border-gray-300"
                   }`}
                   disabled={isSubmitting}
@@ -340,7 +340,7 @@ export function CreateTransferForm({
                     placeholder="Add a note for this transfer"
                     rows={3}
                     maxLength={200}
-                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       errors.memo ? "border-red-300" : "border-gray-300"
                     }`}
                     disabled={isSubmitting}
@@ -377,7 +377,7 @@ export function CreateTransferForm({
                           handleInputChange("businessPurpose", e.target.value)
                         }
                         placeholder="e.g., Customer withdrawal, Exchange rebalancing"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                        className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
                         disabled={isSubmitting}
                       />
                       <p className="text-sm text-gray-500">
@@ -401,7 +401,7 @@ export function CreateTransferForm({
                             handleInputChange("requestorName", e.target.value)
                           }
                           placeholder="Full name"
-                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                          className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
                           disabled={isSubmitting}
                         />
                       </div>
@@ -422,7 +422,7 @@ export function CreateTransferForm({
                             handleInputChange("requestorEmail", e.target.value)
                           }
                           placeholder="email@company.com"
-                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                          className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
                           disabled={isSubmitting}
                         />
                       </div>
@@ -441,7 +441,7 @@ export function CreateTransferForm({
                         onChange={(e) =>
                           handleInputChange("urgencyLevel", e.target.value)
                         }
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                        className="w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
                         disabled={isSubmitting}
                       >
                         <option value="low">Low - Standard processing</option>

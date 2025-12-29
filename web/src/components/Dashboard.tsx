@@ -411,7 +411,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Wallets</h3>
-            <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+            <button 
+              onClick={() => setActiveTab("create-wallet")}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+            >
               Add Wallet
             </button>
           </div>
@@ -501,12 +504,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               Transfer History
             </h3>
             <div className="flex gap-2">
-              <select className="border border-gray-300 rounded-md px-3 py-2 text-sm">
+              <select className="border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900">
                 <option value="">All Types</option>
                 <option value="warm">Warm</option>
                 <option value="cold">Cold</option>
               </select>
-              <select className="border border-gray-300 rounded-md px-3 py-2 text-sm">
+              <select className="border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900">
                 <option value="">All Status</option>
                 <option value="pending_approval">Pending Approval</option>
                 <option value="confirmed">Confirmed</option>
@@ -634,7 +637,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 }))
               }
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="e.g., Main Trading Wallet"
             />
           </div>
@@ -707,7 +710,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                   coin: e.target.value,
                 }))
               }
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="BTC">Bitcoin (BTC)</option>
               <option value="ETH">Ethereum (ETH)</option>
@@ -735,7 +738,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 }))
               }
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter a strong passphrase"
             />
             <p className="text-sm text-gray-500 mt-1">

@@ -15,6 +15,10 @@ import {
   CreateTransferForm,
   type TransferFormData,
 } from "../transfers/create-transfer-form";
+import {
+  CreateWalletForm,
+  type CreateWalletFormData,
+} from "./create-wallet-form";
 import api from "@/lib/api";
 export function WalletDashboard() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -23,6 +27,7 @@ export function WalletDashboard() {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null);
+  const [showCreateWalletForm, setShowCreateWalletForm] = useState(false);
 
   // Load wallets from API
   useEffect(() => {
@@ -112,6 +117,41 @@ export function WalletDashboard() {
     setSelectedWallet(null);
   };
 
+  const handleCreateWallet = () => {
+    setShowCreateWalletForm(true);
+  };
+
+  const handleWalletSubmit = async (walletData: CreateWalletFormData) => {
+    try {
+      setError(null);
+
+      // Call the API to create the wallet
+      const response = await api.post("/api/v1/wallets", {
+        bitgo_wallet_id: walletData.bitgoWalletId,
+        label: walletData.label,
+        coin: walletData.coin,
+        wallet_type: walletData.walletType,
+        multisig_type: walletData.multisigType,
+        threshold: walletData.threshold,
+        tags: walletData.tags,
+        metadata: walletData.metadata,
+      });
+
+      // Close the form and reload wallets
+      setShowCreateWalletForm(false);
+      await loadWallets();
+
+      // Could show a success message here
+    } catch (err) {
+      // Let the form handle the error display
+      throw err;
+    }
+  };
+
+  const handleCancelWalletCreation = () => {
+    setShowCreateWalletForm(false);
+  };
+
   const handleSyncBalance = async (wallet: Wallet) => {
     try {
       setSyncing(wallet.id);
@@ -176,7 +216,7 @@ export function WalletDashboard() {
               >
                 {loading ? "Discovering..." : "Discover Wallets"}
               </Button>
-              <Button>Create Wallet</Button>
+              <Button onClick={handleCreateWallet}>Create Wallet</Button>
             </div>
           </div>
         </div>
@@ -309,7 +349,7 @@ export function WalletDashboard() {
                 <Button variant="outline" onClick={handleDiscoverWallets}>
                   Discover Wallets
                 </Button>
-                <Button>Create Wallet</Button>
+                <Button onClick={handleCreateWallet}>Create Wallet</Button>
               </div>
             </CardContent>
           </Card>
@@ -335,6 +375,18 @@ export function WalletDashboard() {
                 wallet={selectedWallet}
                 onSubmit={handleTransferSubmit}
                 onCancel={handleCancelTransfer}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Wallet Creation Form Modal */}
+        {showCreateWalletForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <CreateWalletForm
+                onSubmit={handleWalletSubmit}
+                onCancel={handleCancelWalletCreation}
               />
             </div>
           </div>

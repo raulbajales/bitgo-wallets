@@ -140,7 +140,7 @@ export function TransferList({
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="text-sm border border-gray-300 rounded px-3 py-1"
+            className="text-sm border border-gray-300 rounded px-3 py-1 text-gray-900"
           >
             <option value="all">All Status</option>
             <option value="draft">Draft</option>
@@ -159,7 +159,7 @@ export function TransferList({
             onChange={(e) =>
               setSortBy(e.target.value as "date" | "amount" | "status")
             }
-            className="text-sm border border-gray-300 rounded px-3 py-1"
+            className="text-sm border border-gray-300 rounded px-3 py-1 text-gray-900"
           >
             <option value="date">Date</option>
             <option value="amount">Amount</option>

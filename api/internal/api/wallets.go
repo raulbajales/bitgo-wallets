@@ -209,7 +209,8 @@ func (s *Server) discoverWallets(c *gin.Context) {
 
 	// List wallets from BitGo
 	ctx := context.Background()
-	bitgoWallets, err := s.bitgoClient.ListWallets(ctx, coin, bitgo.ListWalletsParams{
+	bitgoWallets, err := s.bitgoClient.ListWallets(ctx, bitgo.WalletListOptions{
+		Coin:  coin,
 		Limit: 100,
 	})
 	if err != nil {

@@ -23,7 +23,7 @@ func Load() *Config {
 		GinMode:          getEnv("GIN_MODE", "debug"),
 		AdminEmail:       getEnv("ADMIN_EMAIL", "admin@bitgo.com"),
 		AdminPassword:    getEnv("ADMIN_PASSWORD", "admin123"),
-		BitGoBaseURL:     getEnv("BITGO_BASE_URL", "https://test.bitgo.com"),
+		BitGoBaseURL:     getEnv("BITGO_API_URL", "https://app.bitgo-test.com"),
 		BitGoAccessToken: getEnv("BITGO_ACCESS_TOKEN", ""),
 		BitGoEnvironment: getEnv("BITGO_ENVIRONMENT", "test"),
 		WebhookURL:       getEnv("WEBHOOK_URL", ""),

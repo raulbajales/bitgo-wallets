@@ -94,7 +94,12 @@ CREATE TABLE transfer_requests (
     
     -- BitGo integration
     bitgo_transfer_id VARCHAR(255) UNIQUE, -- BitGo's transfer ID
+    bitgo_txid VARCHAR(255), -- BitGo's transaction ID
     transaction_hash VARCHAR(255), -- Blockchain transaction hash
+    
+    -- Fee information
+    fee VARCHAR(50), -- Transaction fee
+    fee_rate VARCHAR(50), -- Fee rate
     
     -- Approval tracking
     required_approvals INTEGER DEFAULT 1,
