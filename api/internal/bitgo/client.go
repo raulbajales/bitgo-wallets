@@ -88,6 +88,11 @@ func NewClient(config Config, logger Logger) *Client {
 	}
 }
 
+// GetEnterprise returns the enterprise ID
+func (c *Client) GetEnterprise() string {
+	return c.enterprise
+}
+
 // makeRequest performs an HTTP request to the BitGo API with retry logic
 func (c *Client) makeRequest(ctx context.Context, opts RequestOptions) (*http.Response, error) {
 	// Generate correlation ID for request tracking
@@ -254,6 +259,7 @@ func (c *Client) parseAPIError(resp *http.Response, correlationID string) error 
 		"error", apiErr.ErrorMsg,
 		"message", apiErr.Message,
 		"correlation_id", correlationID,
+		"raw_response_body", string(body),
 	)
 
 	return apiErr

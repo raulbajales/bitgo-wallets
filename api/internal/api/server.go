@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -70,14 +71,18 @@ func (s *Server) initBitGoClient() {
 	// Create BitGo logger that captures requests for debug console
 	logger := NewBitGoLogger(s.bitgoRequestLogger)
 
+	log.Printf("🔧 DEBUG: Initializing BitGo client with Enterprise ID: '%s'", s.config.BitGoEnterpriseID)
+
 	bitgoConfig := bitgo.Config{
 		BaseURL:     s.config.BitGoBaseURL,
 		AccessToken: s.config.BitGoAccessToken,
+		Enterprise:  s.config.BitGoEnterpriseID,
 		Timeout:     30 * time.Second,
 		MaxRetries:  3,
 	}
 
 	s.bitgoClient = bitgo.NewClient(bitgoConfig, logger)
+	log.Printf("🔧 DEBUG: BitGo client initialized. Enterprise from client: '%s'", s.bitgoClient.GetEnterprise())
 }
 
 func (s *Server) initNotificationService() {

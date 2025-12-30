@@ -146,6 +146,45 @@ func (c *Client) ListWallets(ctx context.Context, opts WalletListOptions) (*Wall
 	return &result, nil
 }
 
+// CreateWalletRaw creates a wallet using raw request body
+func (c *Client) CreateWalletRaw(ctx context.Context, coin string, body map[string]interface{}) (*Wallet, error) {
+	// Direct API endpoint (not BitGo Express): POST /api/v2/{coin}/wallet
+	path := fmt.Sprintf("/%s/wallet", coin)
+
+	c.logger.Info("Creating wallet via direct API",
+		"coin", coin,
+		"path", path,
+		"enterprise", c.enterprise,
+	)
+
+	resp, err := c.makeRequest(ctx, RequestOptions{
+		Method: http.MethodPost,
+		Path:   path,
+		Body:   body,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create wallet: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, c.parseAPIError(resp, "")
+	}
+
+	var wallet Wallet
+	if err := json.NewDecoder(resp.Body).Decode(&wallet); err != nil {
+		return nil, fmt.Errorf("failed to decode wallet response: %w", err)
+	}
+
+	c.logger.Info("Wallet created successfully",
+		"wallet_id", wallet.ID,
+		"label", wallet.Label,
+		"coin", coin,
+	)
+
+	return &wallet, nil
+}
+
 // GetWallet retrieves a specific wallet by ID
 func (c *Client) GetWallet(ctx context.Context, walletID, coin string) (*Wallet, error) {
 	if walletID == "" {

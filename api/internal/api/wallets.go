@@ -62,43 +62,49 @@ func (s *Server) createWallet(c *gin.Context) {
 	// Test actual BitGo API calls that will show in requests tab
 	log.Printf("🔧 DEBUG: Making multiple BitGo API calls to generate request logs...")
 
-	// Call 1: ListWallets
+	// Call 1: Try to CREATE a wallet (POST request) - this is what we want to see!
+	log.Printf("🔧 DEBUG: Making BitGo POST CreateWallet call...")
+	createWalletReq := map[string]interface{}{
+		"label":      "Test Wallet from UI",
+		"passphrase": "test-passphrase-12345",
+		"enterprise": s.bitgoClient.GetEnterprise(),
+	}
+
+	// Make POST request to create wallet endpoint
+	_, createErr := s.bitgoClient.CreateWalletRaw(ctx, "tbtc", createWalletReq)
+	log.Printf("🔧 DEBUG: BitGo CreateWallet POST call completed")
+	if createErr != nil {
+		log.Printf("BitGo CreateWallet call failed (expected - testing request logging): %v", createErr)
+	}
+
+	// Call 2: ListWallets
 	_, bitgoListErr := s.bitgoClient.ListWallets(ctx, bitgo.WalletListOptions{
-		Coin:  "tbtc", // Test with testnet Bitcoin
-		Limit: 1,      // Just get 1 wallet to test logging
+		Coin:  "tbtc",
+		Limit: 1,
 	})
 
 	log.Printf("🔧 DEBUG: BitGo ListWallets call completed")
 	if bitgoListErr != nil {
-		log.Printf("BitGo ListWallets call failed (expected without valid token): %v", bitgoListErr)
+		log.Printf("BitGo ListWallets call failed: %v", bitgoListErr)
 	}
 
-	// Call 2: Try to get a specific wallet (will also fail but generate request)
+	// Call 3: Try to get a specific wallet
 	log.Printf("🔧 DEBUG: Making BitGo GetWallet call...")
 	_, bitgoGetErr := s.bitgoClient.GetWallet(ctx, "test-wallet-id", "tbtc")
 
 	log.Printf("🔧 DEBUG: BitGo GetWallet call completed")
 	if bitgoGetErr != nil {
-		log.Printf("BitGo GetWallet call failed (expected): %v", bitgoGetErr)
-	}
-
-	// Call 3: Try to validate an address (another API call)
-	log.Printf("🔧 DEBUG: Making BitGo ValidateAddress call...")
-	_, bitgoValidateErr := s.bitgoClient.ValidateAddress(ctx, "test-address-123")
-
-	log.Printf("🔧 DEBUG: BitGo ValidateAddress call completed")
-	if bitgoValidateErr != nil {
-		log.Printf("BitGo ValidateAddress call failed (expected): %v", bitgoValidateErr)
+		log.Printf("BitGo GetWallet call failed: %v", bitgoGetErr)
 	}
 
 	// NOW do validation (after BitGo call so requests appear regardless)
 	var req CreateWalletRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("🔧 DEBUG: Wallet creation validation failed: %v", err)
-		// Return success anyway since we made the BitGo call
-		c.JSON(http.StatusOK, gin.H{
-			"message": "BitGo request logged successfully (validation failed but that's OK for testing)",
-			"error":   err.Error(),
+		// Return validation error to frontend
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Validation failed: " + err.Error(),
+			"details": "BitGo API requests were logged for debugging. Please check required fields.",
 		})
 		return
 	}
