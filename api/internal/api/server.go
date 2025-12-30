@@ -20,11 +20,12 @@ type Server struct {
 	router *gin.Engine
 
 	// External services
-	bitgoClient     *bitgo.Client
-	pollingWorker   *services.TransferPollingWorker
-	notificationSvc services.NotificationService
-	coldWalletSvc   *services.ColdWalletService
-	warmWalletSvc   *services.WarmWalletService
+	bitgoClient        *bitgo.Client
+	bitgoRequestLogger *BitGoRequestLogger
+	pollingWorker      *services.TransferPollingWorker
+	notificationSvc    services.NotificationService
+	coldWalletSvc      *services.ColdWalletService
+	warmWalletSvc      *services.WarmWalletService
 
 	// Repositories
 	walletRepo          repository.WalletRepository
@@ -36,6 +37,9 @@ func NewServer(db *sql.DB, cfg *config.Config) *Server {
 		db:     db,
 		config: cfg,
 	}
+
+	// Initialize BitGo request logger first (needed by BitGo client)
+	server.bitgoRequestLogger = NewBitGoRequestLogger()
 
 	// Initialize BitGo client
 	server.initBitGoClient()
@@ -63,8 +67,8 @@ func NewServer(db *sql.DB, cfg *config.Config) *Server {
 }
 
 func (s *Server) initBitGoClient() {
-	// Create a simple logger implementation
-	logger := &SimpleLogger{}
+	// Create BitGo logger that captures requests for debug console
+	logger := NewBitGoLogger(s.bitgoRequestLogger)
 
 	bitgoConfig := bitgo.Config{
 		BaseURL:     s.config.BitGoBaseURL,
@@ -191,70 +195,54 @@ func (s *Server) setupRouter() {
 	// Health check
 	s.router.GET("/health", s.healthCheck)
 	s.router.GET("/health/detailed", s.detailedHealthCheck)
+
+	// WebSocket endpoint for BitGo request logs
+	s.router.GET("/ws/bitgo-requests", s.HandleBitGoRequestLogs)
+
 	api := s.router.Group("/api/v1")
-	{
-		// Auth routes
-		auth := api.Group("/auth")
-		{
-			auth.POST("/login", s.login)
-		}
+	// NO MIDDLEWARE APPLIED - ALL ROUTES ARE PUBLIC
 
-		// Protected routes
-		protected := api.Group("/")
-		protected.Use(s.authMiddleware())
-		{
-			// Wallet routes
-			wallets := protected.Group("/wallets")
-			{
-				wallets.GET("", s.listWallets)
-				wallets.POST("", s.createWallet)
-				wallets.GET("/discover", s.discoverWallets)
-				wallets.GET("/:id", s.getWallet)
-				wallets.PUT("/:id", s.updateWallet)
-				wallets.DELETE("/:id", s.deleteWallet)
-				wallets.POST("/:id/sync-balance", s.syncWalletBalance)
+	// Test endpoints
+	api.GET("/test-bitgo", s.testBitGo)
+	api.POST("/test-wallet", s.createWallet)
+	api.GET("/test-bitgo-direct", s.testBitGoLogging)
 
-				// Transfer routes under wallets
-				wallets.GET("/:id/transfers", s.listTransfers)
-				wallets.POST("/:id/transfers", s.createTransfer)
-			}
+	// Auth routes (for compatibility)
+	api.POST("/auth/login", s.login)
 
-			// Transfer routes
-			transfers := protected.Group("/transfers")
-			{
-				transfers.GET("/:id", s.getTransfer)
-				transfers.PUT("/:id", s.updateTransfer)
-				transfers.PUT("/:id/status", s.updateTransferStatus)
-				transfers.POST("/:id/submit", s.submitTransfer)
-				transfers.GET("/:id/status", s.getTransferStatus)
-				transfers.PUT("/:id/offline-workflow-state", s.updateOfflineWorkflowState)
-				transfers.POST("/verify-address", s.verifyAddress)
+	// Wallet routes - NO AUTH REQUIRED
+	api.GET("/wallets", s.listWallets)
+	api.POST("/wallets", s.createWallet)
+	api.GET("/wallets/discover", s.discoverWallets)
+	api.GET("/wallets/:id", s.getWallet)
+	api.PUT("/wallets/:id", s.updateWallet)
+	api.DELETE("/wallets/:id", s.deleteWallet)
+	api.POST("/wallets/:id/sync-balance", s.syncWalletBalance)
+	api.GET("/wallets/:id/transfers", s.listTransfers)
+	api.POST("/wallets/:id/transfers", s.createTransfer)
 
-				// Cold transfer routes
-				cold := transfers.Group("/cold")
-				{
-					cold.POST("", s.createColdTransfer)
-					cold.GET("/sla", s.getColdTransfersSLA)
-					cold.GET("/admin-queue", s.getColdTransfersAdminQueue)
-				}
+	// Transfer routes - NO AUTH REQUIRED
+	api.GET("/transfers/:id", s.getTransfer)
+	api.PUT("/transfers/:id", s.updateTransfer)
+	api.PUT("/transfers/:id/status", s.updateTransferStatus)
+	api.POST("/transfers/:id/submit", s.submitTransfer)
+	api.GET("/transfers/:id/status", s.getTransferStatus)
+	api.PUT("/transfers/:id/offline-workflow-state", s.updateOfflineWorkflowState)
+	api.POST("/transfers/verify-address", s.verifyAddress)
 
-				// Warm transfer routes
-				warm := transfers.Group("/warm")
-				{
-					warm.POST("", s.createWarmTransfer)
-					warm.GET("/sla", s.getWarmTransfersSLA)
-					warm.GET("/analytics", s.getWarmTransfersAnalytics)
-					warm.POST("/:id/process", s.processWarmTransfer)
-				}
-			}
+	// Cold transfer routes - NO AUTH REQUIRED
+	api.POST("/transfers/cold", s.createColdTransfer)
+	api.GET("/transfers/cold/sla", s.getColdTransfersSLA)
+	api.GET("/transfers/cold/admin-queue", s.getColdTransfersAdminQueue)
 
-			// Admin routes
-			admin := protected.Group("/admin")
-			{
-				admin.GET("/approvers", s.getApprovers)
-			}
-		}
-	}
+	// Warm transfer routes - NO AUTH REQUIRED
+	api.POST("/transfers/warm", s.createWarmTransfer)
+	api.GET("/transfers/warm/sla", s.getWarmTransfersSLA)
+	api.GET("/transfers/warm/analytics", s.getWarmTransfersAnalytics)
+	api.POST("/transfers/warm/:id/process", s.processWarmTransfer)
+
+	// Admin routes - NO AUTH REQUIRED
+	api.GET("/admin/approvers", s.getApprovers)
 }
 
 func (s *Server) Start() error {

@@ -15,18 +15,11 @@ class APIClient {
     private async request(endpoint: string, options: RequestInit = {}): Promise<any> {
         const url = `${this.baseURL}${endpoint}`;
 
-        // Get auth token if available
-        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-
-        // Setup headers
-        const headers = {
+        // Setup headers (no authentication required)
+        const headers: Record<string, string> = {
             'Content-Type': 'application/json',
-            ...(options.headers || {}),
+            ...(options.headers as Record<string, string> || {}),
         };
-
-        if (token) {
-            headers.Authorization = `Bearer ${token}`;
-        }
 
         // Create AbortController for timeout
         const controller = new AbortController();
@@ -40,15 +33,6 @@ class APIClient {
             });
 
             clearTimeout(timeoutId);
-
-            // Handle 401 unauthorized
-            if (response.status === 401) {
-                if (typeof window !== 'undefined') {
-                    localStorage.removeItem('auth_token');
-                    window.location.href = '/';
-                }
-                throw new Error('Unauthorized');
-            }
 
             // Parse JSON response
             const data = await response.json();

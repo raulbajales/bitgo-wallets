@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
+
+	"bitgo-wallets-api/internal/bitgo"
 
 	"github.com/gin-gonic/gin"
 )
@@ -77,4 +80,30 @@ func (s *Server) detailedHealthCheck(c *gin.Context) {
 	}
 
 	c.JSON(statusCode, response)
+}
+
+// testBitGo makes a simple BitGo API call to test request logging
+func (s *Server) testBitGo(c *gin.Context) {
+	ctx := context.Background()
+
+	// Make a simple BitGo API call - this should trigger request logging
+	wallets, err := s.bitgoClient.ListWallets(ctx, bitgo.WalletListOptions{
+		Coin:  "tbtc",
+		Limit: 1,
+	})
+
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "BitGo test call completed (with expected error)",
+			"error":   err.Error(),
+			"note":    "Check the Requests tab to see if the API call was logged",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "BitGo test call succeeded",
+		"wallets": len(wallets.Wallets),
+		"note":    "Check the Requests tab to see the logged API call",
+	})
 }

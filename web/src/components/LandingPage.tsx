@@ -1,5 +1,5 @@
 interface LandingPageProps {
-  onLoginClick: () => void;
+  onGetStarted: () => void;
 }
 
 const features = [
@@ -111,7 +111,7 @@ const workflowSteps = [
   },
 ];
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-16">
@@ -126,7 +126,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
           </p>
 
           <button
-            onClick={onLoginClick}
+            onClick={onGetStarted}
             className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg font-semibold text-lg transition-colors shadow-lg hover:shadow-xl inline-flex items-center gap-2"
           >
             <svg

@@ -4,7 +4,21 @@ import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 
 interface DashboardProps {
-  onLogout: () => void;
+  // No logout needed - removed authentication
+}
+
+interface APIRequest {
+  id: string;
+  timestamp: string;
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: any;
+  response?: any;
+  responseStatus?: number;
+  duration?: number;
+  error?: string;
+  correlationId?: string;
 }
 
 interface Wallet {
@@ -43,7 +57,7 @@ interface CreateWalletForm {
   passphrase: string;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
+export const Dashboard: React.FC<DashboardProps> = () => {
   const [activeTab, setActiveTab] = useState<
     | "overview"
     | "wallets"
@@ -51,6 +65,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     | "new-transfer"
     | "create-wallet"
     | "help"
+    | "requests"
   >("overview");
   const [selectedWalletType, setSelectedWalletType] = useState<"warm" | "cold">(
     "warm"
@@ -70,11 +85,141 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     general?: string;
   }>({});
   const [error, setError] = useState<string | null>(null);
+  const [apiRequests, setApiRequests] = useState<APIRequest[]>([]);
 
   // Load data from API
   useEffect(() => {
+    let websocket: WebSocket | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let isConnecting = false;
+    let shouldConnect = true;
+
+    // Connect to BitGo request logs WebSocket
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const apiHost = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    const wsHost = apiHost.replace("http://", "").replace("https://", "");
+    const wsUrl = `${wsProtocol}//${wsHost}/ws/bitgo-requests`;
+
+    console.log("Setting up WebSocket connection to:", wsUrl);
+
+    const connectWebSocket = () => {
+      if (isConnecting || !shouldConnect) {
+        return;
+      }
+
+      isConnecting = true;
+
+      try {
+        console.log("🔄 Connecting to BitGo request logs...");
+        websocket = new WebSocket(wsUrl);
+
+        // Set a connection timeout
+        const connectionTimeout = setTimeout(() => {
+          if (websocket && websocket.readyState === WebSocket.CONNECTING) {
+            console.log("⏰ Connection timeout, retrying...");
+            websocket.close();
+            isConnecting = false;
+            if (shouldConnect) {
+              setTimeout(connectWebSocket, 3000);
+            }
+          }
+        }, 10000); // 10 second timeout
+
+        websocket.onopen = () => {
+          clearTimeout(connectionTimeout);
+          console.log("✅ Connected to BitGo request logs");
+          isConnecting = false;
+          // Clear any pending reconnection
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+          }
+        };
+
+        websocket.onmessage = (event) => {
+          try {
+            const requestLog: APIRequest = JSON.parse(event.data);
+            console.log(
+              "Received BitGo request log:",
+              requestLog.method,
+              requestLog.url
+            );
+            setApiRequests((prev) => [...prev, requestLog]);
+          } catch (error) {
+            console.error("Error parsing WebSocket message:", error);
+          }
+        };
+
+        websocket.onerror = (error) => {
+          // Only show error if this is not during a normal reconnection attempt
+          if (!isConnecting) {
+            console.warn(
+              "🔄 WebSocket connection issue, will retry automatically"
+            );
+          }
+          isConnecting = false;
+        };
+
+        websocket.onclose = (event) => {
+          console.log(
+            `🔌 BitGo WebSocket closed (code: ${event.code}, reason: ${
+              event.reason || "no reason"
+            })`
+          );
+          isConnecting = false;
+
+          // Auto-reconnect for any non-deliberate close
+          if (shouldConnect && event.code !== 1000) {
+            // Don't spam reconnection attempts - wait longer for server startup
+            const reconnectDelay = event.code === 1006 ? 5000 : 2000; // 5s for connection refused, 2s for others
+            console.log(
+              `⏳ Reconnecting in ${reconnectDelay / 1000} seconds...`
+            );
+            reconnectTimeout = setTimeout(() => {
+              if (shouldConnect) {
+                connectWebSocket();
+              }
+            }, 3000);
+          }
+        };
+      } catch (error) {
+        console.error("Failed to create WebSocket connection:", error);
+        console.error("WebSocket URL:", wsUrl);
+        isConnecting = false;
+
+        // Retry after delay if we should still be connected
+        if (shouldConnect) {
+          reconnectTimeout = setTimeout(() => {
+            if (shouldConnect) {
+              connectWebSocket();
+            }
+          }, 5000);
+        }
+      }
+    };
+
+    // Initial connection with delay to ensure API server is ready
+    console.log("⏳ Waiting 2 seconds for API server to be ready...");
+    setTimeout(() => {
+      if (shouldConnect) {
+        connectWebSocket();
+      }
+    }, 2000);
+
     loadWallets();
     loadTransfers();
+
+    // Cleanup function
+    return () => {
+      shouldConnect = false;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      if (websocket) {
+        console.log("🔌 Closing WebSocket connection on cleanup");
+        websocket.close(1000, "Component unmounting");
+      }
+    };
   }, []);
 
   const loadWallets = async () => {
@@ -1534,6 +1679,176 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     </div>
   );
 
+  // Render Requests (API Debug Console)
+  const renderRequests = () => {
+    const formatCurl = (request: APIRequest): string => {
+      const obscureToken = (headers: Record<string, string>) => {
+        const newHeaders = { ...headers };
+        if (newHeaders.Authorization) {
+          const parts = newHeaders.Authorization.split(" ");
+          if (parts.length === 2) {
+            const token = parts[1];
+            newHeaders.Authorization = `${parts[0]} ${token.slice(
+              0,
+              6
+            )}...${token.slice(-4)}`;
+          }
+        }
+        return newHeaders;
+      };
+
+      const obscuredHeaders = obscureToken(request.headers);
+      let curl = `curl -X ${request.method} "${request.url}"`;
+
+      Object.entries(obscuredHeaders).forEach(([key, value]) => {
+        curl += ` \\
+  -H "${key}: ${value}"`;
+      });
+
+      if (request.body) {
+        curl += ` \\
+  -d '${JSON.stringify(request.body, null, 2)}'`;
+      }
+
+      return curl;
+    };
+
+    const clearRequests = () => {
+      setApiRequests([]);
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">
+              BitGo API Requests
+            </h2>
+            <p className="text-gray-600 mt-1">
+              Real-time debug console showing API requests from your server to
+              BitGo
+            </p>
+          </div>
+          <button
+            onClick={clearRequests}
+            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            Clear Logs
+          </button>
+        </div>
+
+        <div className="bg-gray-900 text-green-400 rounded-lg p-4 font-mono text-sm max-h-96 overflow-y-auto">
+          {apiRequests.length === 0 ? (
+            <div className="text-gray-500 text-center py-8">
+              No API requests yet. Interact with wallets or transfers to see
+              requests appear here.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {apiRequests
+                .slice()
+                .reverse()
+                .map((request, index) => (
+                  <div
+                    key={request.id}
+                    className="border-b border-gray-700 pb-4 last:border-b-0"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-blue-400 font-semibold">
+                        [{request.timestamp}] {request.method} Request
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        {request.duration && (
+                          <span className="text-yellow-400 text-xs">
+                            {request.duration}ms
+                          </span>
+                        )}
+                        <span
+                          className={`text-xs px-2 py-1 rounded ${
+                            request.error
+                              ? "bg-red-600 text-white"
+                              : request.responseStatus &&
+                                request.responseStatus >= 400
+                              ? "bg-yellow-600 text-white"
+                              : "bg-green-600 text-white"
+                          }`}
+                        >
+                          {request.error
+                            ? "ERROR"
+                            : request.responseStatus || "PENDING"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* CURL Command */}
+                    <div className="mb-3">
+                      <div className="text-cyan-400 font-semibold mb-1">
+                        CURL:
+                      </div>
+                      <pre className="text-gray-300 text-xs whitespace-pre-wrap bg-gray-800 p-2 rounded">
+                        {formatCurl(request)}
+                      </pre>
+                    </div>
+
+                    {/* Response */}
+                    {request.response && (
+                      <div>
+                        <div className="text-cyan-400 font-semibold mb-1">
+                          Response:
+                        </div>
+                        <pre className="text-gray-300 text-xs whitespace-pre-wrap bg-gray-800 p-2 rounded max-h-48 overflow-y-auto">
+                          {JSON.stringify(request.response, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+
+                    {/* Error */}
+                    {request.error && (
+                      <div>
+                        <div className="text-red-400 font-semibold mb-1">
+                          Error:
+                        </div>
+                        <pre className="text-red-300 text-xs bg-gray-800 p-2 rounded">
+                          {request.error}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start">
+            <svg
+              className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <div>
+              <h3 className="text-blue-800 font-semibold">
+                BitGo API Debug Console
+              </h3>
+              <p className="text-blue-700 text-sm mt-1">
+                This console shows real-time API requests made by your server to
+                BitGo. Auth tokens are automatically obscured for security. Use
+                this to debug BitGo API interactions and understand the actual
+                requests being sent to BitGo's servers.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -1545,25 +1860,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 BitGo Wallets - Custody Platform
               </h1>
             </div>
-            <button
-              onClick={onLogout}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                />
-              </svg>
-              Logout
-            </button>
+            <div className="text-sm text-gray-500">
+              Demo Mode - No Authentication Required
+            </div>
           </div>
         </div>
       </header>
@@ -1597,6 +1896,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 key: "help",
                 label: "Help",
                 icon: "M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+              },
+              {
+                key: "requests",
+                label: "Requests",
+                icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
               },
             ].map((tab) => (
               <button
@@ -1636,6 +1940,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         {activeTab === "new-transfer" && renderNewTransfer()}
         {activeTab === "create-wallet" && renderCreateWallet()}
         {activeTab === "help" && renderHelp()}
+        {activeTab === "requests" && renderRequests()}
       </main>
     </div>
   );
