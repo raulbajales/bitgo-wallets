@@ -37,7 +37,7 @@ type UpdateWalletRequest struct {
 func (s *Server) createWallet(c *gin.Context) {
 	log.Printf("� WALLET CREATION ENDPOINT HIT - THIS SHOULD APPEAR IN LOGS!")
 	log.Printf("�🔧 DEBUG: Wallet creation endpoint called")
-	
+
 	// FIRST: Make BitGo API call to ensure requests appear in the tab BEFORE validation
 	ctx := context.Background()
 	log.Printf("🔧 DEBUG: Making BitGo API call BEFORE validation to ensure request logging")
@@ -61,13 +61,13 @@ func (s *Server) createWallet(c *gin.Context) {
 
 	// Test actual BitGo API calls that will show in requests tab
 	log.Printf("🔧 DEBUG: Making multiple BitGo API calls to generate request logs...")
-	
+
 	// Call 1: ListWallets
 	_, bitgoListErr := s.bitgoClient.ListWallets(ctx, bitgo.WalletListOptions{
 		Coin:  "tbtc", // Test with testnet Bitcoin
 		Limit: 1,      // Just get 1 wallet to test logging
 	})
-	
+
 	log.Printf("🔧 DEBUG: BitGo ListWallets call completed")
 	if bitgoListErr != nil {
 		log.Printf("BitGo ListWallets call failed (expected without valid token): %v", bitgoListErr)
@@ -76,7 +76,7 @@ func (s *Server) createWallet(c *gin.Context) {
 	// Call 2: Try to get a specific wallet (will also fail but generate request)
 	log.Printf("🔧 DEBUG: Making BitGo GetWallet call...")
 	_, bitgoGetErr := s.bitgoClient.GetWallet(ctx, "test-wallet-id", "tbtc")
-	
+
 	log.Printf("🔧 DEBUG: BitGo GetWallet call completed")
 	if bitgoGetErr != nil {
 		log.Printf("BitGo GetWallet call failed (expected): %v", bitgoGetErr)
@@ -85,7 +85,7 @@ func (s *Server) createWallet(c *gin.Context) {
 	// Call 3: Try to validate an address (another API call)
 	log.Printf("🔧 DEBUG: Making BitGo ValidateAddress call...")
 	_, bitgoValidateErr := s.bitgoClient.ValidateAddress(ctx, "test-address-123")
-	
+
 	log.Printf("🔧 DEBUG: BitGo ValidateAddress call completed")
 	if bitgoValidateErr != nil {
 		log.Printf("BitGo ValidateAddress call failed (expected): %v", bitgoValidateErr)
@@ -98,7 +98,7 @@ func (s *Server) createWallet(c *gin.Context) {
 		// Return success anyway since we made the BitGo call
 		c.JSON(http.StatusOK, gin.H{
 			"message": "BitGo request logged successfully (validation failed but that's OK for testing)",
-			"error": err.Error(),
+			"error":   err.Error(),
 		})
 		return
 	}
